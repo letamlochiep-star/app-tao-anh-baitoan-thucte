@@ -100,6 +100,18 @@ export interface WordExportOptions {
 
 export type ApiStatus = 'unconnected' | 'checking' | 'connected' | 'quota_exceeded' | 'error';
 
+export interface ModelSpec {
+  id: string;
+  name: string;
+  isFree: boolean;
+  contextWindow: string;
+  speed: string;
+  mathReasoning: string;
+  multimodal: string;
+  recommendedFor: string;
+  generation: string;
+}
+
 export interface FullResponseData {
   sourceAnalysis: SourceAnalysis;
   problems: ProblemItem[];

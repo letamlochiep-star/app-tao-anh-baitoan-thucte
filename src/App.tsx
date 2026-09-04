@@ -37,7 +37,7 @@ export function App() {
   const [apiKey, setApiKey] = useState<string>(() => {
     return sessionStorage.getItem('gemini_api_key') || '';
   });
-  const [selectedModel, setSelectedModel] = useState<string>('gemini-3.6-flash');
+  const [selectedModel, setSelectedModel] = useState<string>('gemini-3.8-flash');
   const [selectedImageModel, setSelectedImageModel] = useState<string>('imagen-3.0-generate-002');
   const [apiStatus, setApiStatus] = useState<ApiStatus>('unconnected');
   const [apiMessage, setApiMessage] = useState<string>('');

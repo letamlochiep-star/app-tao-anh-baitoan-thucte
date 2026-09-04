@@ -1,6 +1,26 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, ShieldAlert, CheckCircle2, AlertCircle, RefreshCw, Trash2, X, ExternalLink, KeyRound, Layers } from 'lucide-react';
-import { ApiStatus } from '../types';
+import {
+  Eye,
+  EyeOff,
+  ShieldAlert,
+  CheckCircle2,
+  AlertCircle,
+  RefreshCw,
+  Trash2,
+  X,
+  ExternalLink,
+  KeyRound,
+  Layers,
+  Cpu,
+  Zap,
+  Gauge,
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
+  Brain,
+  Camera
+} from 'lucide-react';
+import { ApiStatus, ModelSpec } from '../types';
 
 interface ApiKeyModalProps {
   isOpen: boolean;
@@ -13,7 +33,7 @@ interface ApiKeyModalProps {
   onTestConnection: (keyToTest: string) => Promise<void>;
   onDeleteApiKey: () => void;
   onSelectModel: (model: string) => void;
-  availableModels: { id: string; name: string; isFree: boolean }[];
+  availableModels: ModelSpec[];
 }
 
 export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
@@ -33,6 +53,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
   const [showKey, setShowKey] = useState(false);
   const [saveInSession, setSaveInSession] = useState(true);
   const [isTesting, setIsTesting] = useState(false);
+  const [showFullSpecsTable, setShowFullSpecsTable] = useState(false);
 
   if (!isOpen) return null;
 
@@ -65,7 +86,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
       .split(/[\n\r,;]+/)
       .map((k) => k.trim())
       .filter((k) => k.length > 5);
-    
+
     if (keys.length === 0) return null;
     const masked = keys
       .map((k) => (k.length >= 4 ? `••••••••${k.slice(-4)}` : "••••••••"))
@@ -73,21 +94,24 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
     return `Đang dùng (${keys.length} Key): ${masked}`;
   };
 
+  // Currently selected model spec object
+  const currentModelSpec = availableModels.find((m) => m.id === selectedModel) || availableModels[0];
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
-      <div className="bg-white dark:bg-[#0F172A] rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in overflow-y-auto">
+      <div className="bg-white dark:bg-[#0F172A] rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-5 my-8 max-h-[90vh] overflow-y-auto scrollbar-thin">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-              <KeyRound className="w-4 h-4" />
+            <div className="w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+              <KeyRound className="w-5 h-5" />
             </div>
             <div>
               <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                CẤU HÌNH GEMINI API & XOAY VÒNG KEY
+                CẤU HÌNH GEMINI API & THÔNG SỐ MÔ HÌNH
               </h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Hỗ trợ 1 hoặc nhiều API Key dự phòng (Multi-Key Rotation)
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Xoay vòng Multi-Key & Bảng thông số từ Gemini 3.8 Flash trở xuống
               </p>
             </div>
           </div>
@@ -103,10 +127,10 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
         <div className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-blue-50/60 dark:bg-blue-950/40 p-3 rounded-xl border border-blue-200/80 dark:border-blue-800/80 space-y-1">
           <div className="flex items-center gap-1.5 font-bold text-blue-800 dark:text-blue-300">
             <Layers className="w-4 h-4" />
-            <span>Cơ chế xoay vòng thông minh (Load Balancer):</span>
+            <span>Tự động cân bằng tải (Multi-Key Rotation) & Cascade 10 Mô hình:</span>
           </div>
           <p>
-            Thầy/Cô có thể nhập <strong>1 hoặc nhiều API Key</strong> (ngăn cách bằng dấu phẩy <code>,</code> hoặc xuống dòng). Khi Key 1 hết hạn mức (Quota/429), hệ thống tự động chuyển mượt sang Key 2, Key 3 mà không làm gián đoạn việc soạn đề.
+            Thầy/Cô có thể nhập <strong>nhiều API Key</strong> (cách nhau bởi dấu phẩy <code>,</code> hoặc xuống dòng). Khi gặp lỗi giới hạn (429/Quota), hệ thống sẽ <strong>nghỉ 800ms (Backoff)</strong> và tự động chuyển sang Key tiếp theo cũng như chuyển mượt qua danh sách mô hình ưu tiên từ <strong>Gemini 3.8 Flash</strong> xuống các bản nhẹ hơn.
           </p>
         </div>
 
@@ -123,20 +147,20 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Danh sách Gemini API Key (1 hoặc nhiều khóa)
+                Gemini API Key (Hỗ trợ 1 hoặc nhiều khóa)
               </label>
               {parsedKeys.length > 0 && (
                 <span className="text-[11px] font-bold text-blue-700 dark:text-blue-400">
-                  {parsedKeys.length} khóa đã nhập
+                  {parsedKeys.length} khóa hợp lệ
                 </span>
               )}
             </div>
             <div className="relative">
               <textarea
-                rows={3}
+                rows={2}
                 value={inputKey}
                 onChange={(e) => setInputKey(e.target.value)}
-                placeholder="Dán 1 hoặc nhiều API Key tại đây, ví dụ:&#10;AIzaSyA1...&#10;AIzaSyB2..."
+                placeholder="Dán 1 hoặc nhiều API Key tại đây, ví dụ: AIzaSyA1..., AIzaSyB2..."
                 className={`w-full pl-3 pr-10 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs font-mono focus:ring-2 focus:ring-blue-500 focus:outline-hidden transition-all ${
                   !showKey ? 'filter-blur-[0.5px]' : ''
                 }`}
@@ -155,12 +179,12 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
           {/* Model Selector */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Mô hình Gemini ưu tiên hàng đầu
+              Chọn mô hình Gemini ưu tiên (Xếp từ 3.8 Flash trở xuống)
             </label>
             <select
               value={selectedModel}
               onChange={(e) => onSelectModel(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs font-medium focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
             >
               {availableModels.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -168,13 +192,133 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
                 </option>
               ))}
             </select>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-              Hệ thống tự động cascade theo thứ tự 10 model: <code>gemini-3.6-flash &rarr; gemini-3.1-pro &rarr; gemini-3.5-flash &rarr; gemini-3.1-flash-lite &rarr; gemini-2.5-pro...</code>
-            </p>
+          </div>
+
+          {/* SELECTED MODEL SPECIFICATIONS CARD */}
+          {currentModelSpec && (
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
+                <div className="flex items-center gap-1.5 font-bold text-xs text-blue-700 dark:text-blue-400">
+                  <Cpu className="w-4 h-4" />
+                  <span>THÔNG SỐ KỸ THUẬT: {currentModelSpec.id}</span>
+                </div>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                  {currentModelSpec.generation}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                {/* Context Window */}
+                <div className="p-2 rounded bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-0.5">
+                  <div className="text-[10px] text-slate-500 font-bold uppercase">Ngữ cảnh (Context)</div>
+                  <div className="font-bold text-slate-900 dark:text-slate-100 text-xs flex items-center gap-1">
+                    <Layers className="w-3 h-3 text-blue-600" />
+                    {currentModelSpec.contextWindow}
+                  </div>
+                </div>
+
+                {/* Speed / Latency */}
+                <div className="p-2 rounded bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-0.5">
+                  <div className="text-[10px] text-slate-500 font-bold uppercase">Tốc độ phản hồi</div>
+                  <div className="font-bold text-emerald-700 dark:text-emerald-400 text-xs flex items-center gap-1">
+                    <Zap className="w-3 h-3" />
+                    {currentModelSpec.speed}
+                  </div>
+                </div>
+
+                {/* Math Reasoning */}
+                <div className="p-2 rounded bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-0.5">
+                  <div className="text-[10px] text-slate-500 font-bold uppercase">Suy luận toán học</div>
+                  <div className="font-bold text-blue-700 dark:text-blue-300 text-xs flex items-center gap-1">
+                    <Brain className="w-3 h-3" />
+                    {currentModelSpec.mathReasoning}
+                  </div>
+                </div>
+
+                {/* Multimodal OCR */}
+                <div className="p-2 rounded bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-0.5">
+                  <div className="text-[10px] text-slate-500 font-bold uppercase">OCR Ảnh / Đa phương thức</div>
+                  <div className="font-bold text-slate-800 dark:text-slate-200 text-[11px] flex items-center gap-1">
+                    <Camera className="w-3 h-3 text-blue-600" />
+                    {currentModelSpec.multimodal.split('(')[0]}
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-[11px] text-slate-600 dark:text-slate-300 pt-1">
+                <strong>Ứng dụng tối ưu:</strong> {currentModelSpec.recommendedFor}
+              </div>
+            </div>
+          )}
+
+          {/* TOGGLE FULL MODEL COMPARISON TABLE */}
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowFullSpecsTable(!showFullSpecsTable)}
+              className="text-xs font-bold text-blue-700 dark:text-blue-400 hover:underline inline-flex items-center gap-1 uppercase tracking-wider cursor-pointer"
+            >
+              {showFullSpecsTable ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              {showFullSpecsTable
+                ? "Ẩn bảng thông số toàn bộ mô hình"
+                : "Xem bảng thông số toàn bộ mô hình (Từ Gemini 3.8 Flash trở xuống)"}
+            </button>
+
+            {showFullSpecsTable && (
+              <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 animate-fade-in max-h-[260px] overflow-y-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200 dark:border-slate-800 sticky top-0">
+                      <th className="p-2.5">Mô hình AI</th>
+                      <th className="p-2.5">Thế hệ</th>
+                      <th className="p-2.5">Ngữ cảnh</th>
+                      <th className="p-2.5">Tốc độ</th>
+                      <th className="p-2.5">Toán học</th>
+                      <th className="p-2.5">Chọn</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-sans text-[11px]">
+                    {availableModels.map((m) => {
+                      const isCurrent = m.id === selectedModel;
+                      return (
+                        <tr
+                          key={m.id}
+                          className={`hover:bg-blue-50/50 dark:hover:bg-blue-950/30 transition-colors ${
+                            isCurrent ? 'bg-blue-50 dark:bg-blue-950/60 font-semibold' : ''
+                          }`}
+                        >
+                          <td className="p-2.5">
+                            <span className="font-mono font-bold text-blue-700 dark:text-blue-300">{m.id}</span>
+                            <div className="text-[10px] text-slate-500 truncate max-w-[200px]">{m.name.split('(')[0]}</div>
+                          </td>
+                          <td className="p-2.5">{m.generation}</td>
+                          <td className="p-2.5 font-mono">{m.contextWindow.split(' ')[0]}</td>
+                          <td className="p-2.5 text-emerald-700 dark:text-emerald-400">{m.speed}</td>
+                          <td className="p-2.5 font-bold">{m.mathReasoning}</td>
+                          <td className="p-2.5">
+                            <button
+                              type="button"
+                              onClick={() => onSelectModel(m.id)}
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
+                                isCurrent
+                                  ? 'bg-blue-700 text-white'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-blue-100'
+                              }`}
+                            >
+                              {isCurrent ? "Đang chọn" : "Chọn"}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
           {/* Session Save Checkbox */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 pt-1">
             <input
               type="checkbox"
               id="saveSession"
@@ -224,8 +368,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
                 Google AI Studio <ExternalLink className="w-3 h-3 inline" />
               </a>
             </li>
-            <li>Đăng nhập tài khoản Google của bạn</li>
-            <li>Bấm <strong>"Create API Key"</strong> và sao chép khóa</li>
+            <li>Đăng nhập tài khoản Google & bấm <strong>"Create API Key"</strong> để sao chép khóa</li>
           </ol>
         </div>
 

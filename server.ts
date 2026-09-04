@@ -120,6 +120,7 @@ QUY TẮC BẮT BUỘC:
 
 // Priority order of Gemini models from smartest/highest weight down to lightest & fastest
 const PRIORITY_GEMINI_MODELS = [
+  "gemini-3.8-flash",
   "gemini-3.6-flash",
   "gemini-3.1-pro",
   "gemini-3.5-flash",
