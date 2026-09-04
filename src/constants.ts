@@ -24,11 +24,19 @@ export const SAMPLE_OPTIONS: GenerationOptions = {
 };
 
 export const AVAILABLE_MODELS = [
-  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash (Khuyên dùng - Nhanh & Chính xác nhất)", isFree: true },
-  { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro (Suy luận sâu & Toán học nâng cao)", isFree: false },
-  { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash (Tốc độ phản hồi cực nhanh)", isFree: true },
-  { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash (Hoạt động ổn định trên mọi loại key)", isFree: true },
-  { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro (Xử lý bài toán phức tạp)", isFree: false }
+  { id: "gemini-3.6-flash", name: "Gemini 3.6 Flash (Ưu tiên số 1 - Tối tân, siêu tốc & thông minh nhất)", isFree: true },
+  { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro (Suy luận sâu & Toán học chuyên sâu)", isFree: false },
+  { id: "gemini-3.5-flash", name: "Gemini 3.5 Flash (Thế hệ mới - Đa năng & Chính xác)", isFree: true },
+  { id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash Lite (Siêu nhẹ, phản hồi cực nhanh)", isFree: true },
+  { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro (Toán học nâng cao & Phân tích sâu)", isFree: false },
+  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash (Cân bằng tốc độ & Độ chính xác)", isFree: true },
+  { id: "gemini-2.5-flash-lite", name: "Gemini 2.5 Flash Lite (Nhẹ & Phản hồi nhanh)", isFree: true },
+  { id: "gemini-3-flash", name: "Gemini 3 Flash (Tiêu chuẩn thế hệ 3)", isFree: true },
+  { id: "gemini-2-flash", name: "Gemini 2.0 Flash (Phản hồi tức thì)", isFree: true },
+  { id: "gemini-2-flash-lite", name: "Gemini 2.0 Flash Lite (Tiết kiệm Quota)", isFree: true },
+  { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash (Tương thích ổn định)", isFree: true },
+  { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash (Dự phòng ổn định trên mọi API Key)", isFree: true },
+  { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro (Xử lý đề bài phức tạp)", isFree: false }
 ];
 
 export const AVAILABLE_IMAGE_MODELS = [

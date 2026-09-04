@@ -105,6 +105,29 @@ QUY TẮC BẮT BUỘC:
 7. Lời giải chi tiết trình bày theo từng bước mạch lạc, có kết luận, đáp số rõ ràng, phương pháp kiểm tra lại kết quả độc lập và nêu các lỗi học sinh thường mắc kèm hướng khắc phục.
 8. Bắt buộc trả về đúng cấu trúc JSON đã yêu cầu, không chèn ký tự markdown hay văn bản ngoài JSON.`;
 
+// Priority order of Gemini models from smartest/highest weight down to lightest & fastest
+const PRIORITY_GEMINI_MODELS = [
+  "gemini-3.6-flash",
+  "gemini-3.1-pro",
+  "gemini-3.5-flash",
+  "gemini-3.1-flash-lite",
+  "gemini-2.5-pro",
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-3-flash",
+  "gemini-2-flash",
+  "gemini-2-flash-lite",
+  "gemini-2.0-flash",
+  "gemini-1.5-flash",
+  "gemini-1.5-pro",
+];
+
+// Helper to get prioritized model cascade list starting with user-requested model
+function getModelCascadeList(requestedModel?: string): string[] {
+  const list = requestedModel ? [requestedModel, ...PRIORITY_GEMINI_MODELS] : PRIORITY_GEMINI_MODELS;
+  return Array.from(new Set(list)).filter(Boolean);
+}
+
 // 1. API: Test API Key Connection
 app.post("/api/gemini/test-key", async (req, res) => {
   const { apiKey } = req.body;
@@ -119,12 +142,12 @@ app.post("/api/gemini/test-key", async (req, res) => {
 
   try {
     const ai = getGenAIClient(keyToUse);
-    // Try multiple standard Gemini models in case of tier differences
-    const testModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-pro", "gemini-1.5-pro"];
     let testSuccess = false;
+    let successfulModel = "";
     let lastError: any = null;
 
-    for (const modelName of testModels) {
+    // Loop through prioritized models cascade
+    for (const modelName of PRIORITY_GEMINI_MODELS) {
       try {
         const response = await ai.models.generateContent({
           model: modelName,
@@ -132,25 +155,29 @@ app.post("/api/gemini/test-key", async (req, res) => {
         });
         if (response && response.text) {
           testSuccess = true;
+          successfulModel = modelName;
           break;
         }
       } catch (err: any) {
         lastError = err;
         const msg = err?.message || "";
         if (msg.includes("API_KEY_INVALID") || msg.includes("API key not valid")) {
+          // If key is fundamentally invalid, stop trying other models
           break;
         }
+        console.warn(`[Test Connection Warning] Model ${modelName} failed: ${msg.slice(0, 100)}. Trying next model...`);
       }
     }
 
     if (testSuccess) {
       return res.json({
         success: true,
-        message: "Kết nối Gemini API thành công! API Key hợp lệ.",
+        message: `Kết nối Gemini API thành công (Mô hình khả dụng: ${successfulModel})! API Key hợp lệ.`,
+        modelUsed: successfulModel,
         maskedKey: maskApiKey(keyToUse),
       });
     } else {
-      throw lastError || new Error("Không nhận được phản hồi từ Gemini API");
+      throw lastError || new Error("Không nhận được phản hồi từ bất kỳ mô hình Gemini nào");
     }
   } catch (err: any) {
     return res.json({
@@ -161,31 +188,31 @@ app.post("/api/gemini/test-key", async (req, res) => {
   }
 });
 
-// Helper for generating content with candidate model fallbacks and schema fallback
+// Helper for generating content with prioritized candidate model fallbacks and schema fallback
 async function generateContentWithFallback(
   ai: GoogleGenAI,
   requestedModel: string,
   prompt: string,
   config?: any
-): Promise<string> {
-  const modelsToTry = Array.from(
-    new Set([requestedModel, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-pro"])
-  ).filter(Boolean);
-
+): Promise<{ text: string; modelUsed: string }> {
+  const modelsToTry = getModelCascadeList(requestedModel);
   let lastError: any = null;
 
   for (const modelName of modelsToTry) {
-    // Attempt 1: With provided config (e.g. schema)
+    // Attempt 1: With provided config (e.g. schema + system instruction)
     try {
       const res = await ai.models.generateContent({
         model: modelName,
         contents: prompt,
         config: config || {},
       });
-      if (res.text) return res.text;
+      if (res.text) {
+        return { text: res.text, modelUsed: modelName };
+      }
     } catch (err: any) {
       lastError = err;
-      console.warn(`Attempt with model ${modelName} and full config failed:`, err?.message || err);
+      const errMsg = err?.message || String(err);
+      console.warn(`[Gemini Cascade Warning] Mô hình "${modelName}" gặp lỗi (${errMsg.slice(0, 120)}). Đang tự động chuyển sang mô hình tiếp theo trong danh sách ưu tiên...`);
     }
 
     // Attempt 2: If config contained responseSchema, try without responseSchema but with JSON prompt instruction
@@ -198,16 +225,20 @@ async function generateContentWithFallback(
         const res = await ai.models.generateContent({
           model: modelName,
           contents: prompt + "\n\nBẮT BUỘC trả về đúng cấu trúc JSON, không thêm bất kỳ văn bản ngoài JSON.",
+          config: fallbackConfig,
         });
-        if (res.text) return res.text;
+        if (res.text) {
+          return { text: res.text, modelUsed: modelName };
+        }
       } catch (err: any) {
         lastError = err;
-        console.warn(`Attempt with model ${modelName} without schema failed:`, err?.message || err);
+        const errMsg = err?.message || String(err);
+        console.warn(`[Gemini Cascade Warning] Mô hình "${modelName}" (chế độ prompt JSON dự phòng) gặp lỗi (${errMsg.slice(0, 120)}). Tiếp tục chuyển mô hình...`);
       }
     }
   }
 
-  throw lastError || new Error("Không thể gọi Gemini API thành công.");
+  throw lastError || new Error("Không thể gọi Gemini API thành công sau khi đã thử toàn bộ danh sách mô hình ưu tiên.");
 }
 
 // 2. API: Analyze Source Problem
@@ -266,7 +297,7 @@ Hãy phân tích chi tiết các thành phần: gradeLevel, grade, topic, proble
 
   try {
     const ai = getGenAIClient(apiKey);
-    const jsonStr = await generateContentWithFallback(ai, model, prompt, schemaConfig);
+    const { text: jsonStr, modelUsed } = await generateContentWithFallback(ai, model, prompt, schemaConfig);
     let rawData: any = {};
     try {
       rawData = cleanAndParseJson(jsonStr);
@@ -290,7 +321,7 @@ Hãy phân tích chi tiết các thành phần: gradeLevel, grade, topic, proble
       tikzSuitability: rawData.tikzSuitability || "Thích hợp vẽ sơ đồ minh họa"
     };
 
-    return res.json({ success: true, analysis: data });
+    return res.json({ success: true, analysis: data, modelUsed });
   } catch (err: any) {
     // Smart heuristic analysis fallback if AI fails or key is missing
     console.error("Gemini API analyze error, providing smart local analysis:", err?.message || err);
@@ -423,57 +454,7 @@ YÊU CẦU: Hãy tạo ĐÚNG 10 bài toán thực tế tương tự (id từ 1 
                   type: Type.OBJECT,
                   properties: {
                     dataConsistent: { type: Type.BOOLEAN },
-                    unitsConsistent: { type: Type.BOOLEAN },
-                    answerVerified: { type: Type.BOOLEAN },
-                    imageConsistent: { type: Type.BOOLEAN },
-                    latexValid: { type: Type.BOOLEAN },
-                    tikzValid: { type: Type.BOOLEAN },
-                  },
-                  required: [
-                    "dataConsistent",
-                    "unitsConsistent",
-                    "answerVerified",
-                    "imageConsistent",
-                    "latexValid",
-                    "tikzValid"
-                  ]
-                }
-              },
-              required: [
-                "id",
-                "title",
-                "context",
-                "difficulty",
-                "questionType",
-                "problemText",
-                "latexProblemText",
-                "latexFormulas",
-                "givenData",
-                "requiredResult",
-                "units",
-                "finalAnswer",
-                "imageNeeded",
-                "imageTitle",
-                "imagePrompt",
-                "negativePrompt",
-                "imageAspectRatio",
-                "tikzNeeded",
-                "tikzCode",
-                "solutionSummary",
-                "solutionSteps",
-                "solutionLatex",
-                "verificationMethod",
-                "commonMistakes",
-                "validation"
-              ]
-            }
-          }
-        },
-        required: ["sourceAnalysis", "problems"]
-      }
-    };
-
-    const jsonStr = await generateContentWithFallback(ai, model, userPrompt, schemaConfig);
+     const { text: jsonStr, modelUsed } = await generateContentWithFallback(ai, model, userPrompt, schemaConfig);
     let data = cleanAndParseJson(jsonStr);
 
     // Verify exactly 10 problems returned
@@ -509,7 +490,7 @@ YÊU CẦU: Hãy tạo ĐÚNG 10 bài toán thực tế tương tự (id từ 1 
       }
     }));
 
-    return res.json({ success: true, data });
+    return res.json({ success: true, data, modelUsed });
   } catch (err: any) {
     return res.status(500).json({ error: sanitizeError(err, apiKey) });
   }
@@ -517,7 +498,7 @@ YÊU CẦU: Hãy tạo ĐÚNG 10 bài toán thực tế tương tự (id từ 1 
 
 // 4. API: Regenerate a Single Unlocked Question
 app.post("/api/gemini/regenerate-one", async (req, res) => {
-  const { idToRegenerate, problemText, options, analysis, apiKey, model = "gemini-2.5-flash" } = req.body;
+  const { idToRegenerate, problemText, options, analysis, apiKey, model = "gemini-3.6-flash" } = req.body;
 
   if (!idToRegenerate || idToRegenerate < 1 || idToRegenerate > 10) {
     return res.status(400).json({ error: "Số thứ tự câu cần tạo lại không hợp lệ (phải từ 1-10)." });
@@ -538,69 +519,66 @@ ${JSON.stringify(options || {}, null, 2)}
 
 Trả về duy nhất 01 đối tượng bài toán có id là ${idToRegenerate}.`;
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: userPrompt,
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION_MATH,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            id: { type: Type.INTEGER },
-            title: { type: Type.STRING },
-            context: { type: Type.STRING },
-            difficulty: { type: Type.STRING },
-            questionType: { type: Type.STRING },
-            problemText: { type: Type.STRING },
-            latexProblemText: { type: Type.STRING },
-            latexFormulas: { type: Type.ARRAY, items: { type: Type.STRING } },
-            givenData: { type: Type.ARRAY, items: { type: Type.STRING } },
-            requiredResult: { type: Type.STRING },
-            units: { type: Type.ARRAY, items: { type: Type.STRING } },
-            answerOptions: { type: Type.ARRAY, items: { type: Type.STRING } },
-            correctOption: { type: Type.STRING },
-            finalAnswer: { type: Type.STRING },
-            imageNeeded: { type: Type.BOOLEAN },
-            imageTitle: { type: Type.STRING },
-            imagePrompt: { type: Type.STRING },
-            negativePrompt: { type: Type.STRING },
-            imageAspectRatio: { type: Type.STRING },
-            tikzNeeded: { type: Type.BOOLEAN },
-            tikzCode: { type: Type.STRING },
-            solutionSummary: { type: Type.STRING },
-            solutionSteps: { type: Type.ARRAY, items: { type: Type.STRING } },
-            solutionLatex: { type: Type.STRING },
-            verificationMethod: { type: Type.STRING },
-            commonMistakes: { type: Type.ARRAY, items: { type: Type.STRING } },
-            remedies: { type: Type.ARRAY, items: { type: Type.STRING } },
-            validation: {
-              type: Type.OBJECT,
-              properties: {
-                dataConsistent: { type: Type.BOOLEAN },
-                unitsConsistent: { type: Type.BOOLEAN },
-                answerVerified: { type: Type.BOOLEAN },
-                imageConsistent: { type: Type.BOOLEAN },
-                latexValid: { type: Type.BOOLEAN },
-                tikzValid: { type: Type.BOOLEAN },
-              },
-              required: ["dataConsistent", "unitsConsistent", "answerVerified", "imageConsistent", "latexValid", "tikzValid"]
-            }
-          },
-          required: [
-            "id", "title", "context", "difficulty", "questionType", "problemText",
-            "latexProblemText", "givenData", "requiredResult", "units", "finalAnswer",
-            "imageNeeded", "imageTitle", "imagePrompt", "negativePrompt", "imageAspectRatio",
-            "tikzNeeded", "tikzCode", "solutionSummary", "solutionSteps", "solutionLatex",
-            "verificationMethod", "commonMistakes", "validation"
-          ]
-        }
+    const schemaConfig = {
+      systemInstruction: SYSTEM_INSTRUCTION_MATH,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          id: { type: Type.INTEGER },
+          title: { type: Type.STRING },
+          context: { type: Type.STRING },
+          difficulty: { type: Type.STRING },
+          questionType: { type: Type.STRING },
+          problemText: { type: Type.STRING },
+          latexProblemText: { type: Type.STRING },
+          latexFormulas: { type: Type.ARRAY, items: { type: Type.STRING } },
+          givenData: { type: Type.ARRAY, items: { type: Type.STRING } },
+          requiredResult: { type: Type.STRING },
+          units: { type: Type.ARRAY, items: { type: Type.STRING } },
+          answerOptions: { type: Type.ARRAY, items: { type: Type.STRING } },
+          correctOption: { type: Type.STRING },
+          finalAnswer: { type: Type.STRING },
+          imageNeeded: { type: Type.BOOLEAN },
+          imageTitle: { type: Type.STRING },
+          imagePrompt: { type: Type.STRING },
+          negativePrompt: { type: Type.STRING },
+          imageAspectRatio: { type: Type.STRING },
+          tikzNeeded: { type: Type.BOOLEAN },
+          tikzCode: { type: Type.STRING },
+          solutionSummary: { type: Type.STRING },
+          solutionSteps: { type: Type.ARRAY, items: { type: Type.STRING } },
+          solutionLatex: { type: Type.STRING },
+          verificationMethod: { type: Type.STRING },
+          commonMistakes: { type: Type.ARRAY, items: { type: Type.STRING } },
+          remedies: { type: Type.ARRAY, items: { type: Type.STRING } },
+          validation: {
+            type: Type.OBJECT,
+            properties: {
+              dataConsistent: { type: Type.BOOLEAN },
+              unitsConsistent: { type: Type.BOOLEAN },
+              answerVerified: { type: Type.BOOLEAN },
+              imageConsistent: { type: Type.BOOLEAN },
+              latexValid: { type: Type.BOOLEAN },
+              tikzValid: { type: Type.BOOLEAN },
+            },
+            required: ["dataConsistent", "unitsConsistent", "answerVerified", "imageConsistent", "latexValid", "tikzValid"]
+          }
+        },
+        required: [
+          "id", "title", "context", "difficulty", "questionType", "problemText",
+          "latexProblemText", "givenData", "requiredResult", "units", "finalAnswer",
+          "imageNeeded", "imageTitle", "imagePrompt", "negativePrompt", "imageAspectRatio",
+          "tikzNeeded", "tikzCode", "solutionSummary", "solutionSteps", "solutionLatex",
+          "verificationMethod", "commonMistakes", "validation"
+        ]
       }
-    });
+    };
 
-    const singleProblem = cleanAndParseJson(response.text || "{}");
+    const { text: jsonStr, modelUsed } = await generateContentWithFallback(ai, model, userPrompt, schemaConfig);
+    const singleProblem = cleanAndParseJson(jsonStr || "{}");
     singleProblem.id = idToRegenerate;
-    return res.json({ success: true, problem: singleProblem });
+    return res.json({ success: true, problem: singleProblem, modelUsed });
   } catch (err: any) {
     return res.status(500).json({ error: sanitizeError(err, apiKey) });
   }
@@ -623,6 +601,7 @@ app.post("/api/gemini/generate-image", async (req, res) => {
 
     let imageDataUrl = "";
     let isSvgFallback = false;
+    let modelUsedForSvg = "";
 
     // Attempt 1: Imagen 3 model (imagen-3.0-generate-002)
     try {
@@ -643,10 +622,9 @@ app.post("/api/gemini/generate-image", async (req, res) => {
       // Imagen 3 failed or not supported by key tier, continue to fallback
     }
 
-    // Attempt 2: Intelligent SVG Vector Graphic fallback via gemini-2.5-flash (Works on ALL API keys!)
+    // Attempt 2: Intelligent SVG Vector Graphic cascade fallback (Works on ALL API keys!)
     if (!imageDataUrl) {
-      try {
-        const svgPrompt = `Bạn là chuyên gia thiết kế hình họa giáo dục Toán học. Hãy vẽ một sơ đồ vector SVG minh họa trực quan cho bài toán thực tế sau:
+      const svgPrompt = `Bạn là chuyên gia thiết kế hình họa giáo dục Toán học. Hãy vẽ một sơ đồ vector SVG minh họa trực quan cho bài toán thực tế sau:
 MÔ TẢ HÌNH VẼ: ${imagePrompt}
 YÊU CẦU BẮT BUỘC:
 1. Trả về mã SVG hoàn chỉnh bắt đầu bằng <svg viewBox="0 0 800 450" xmlns="http://www.w3.org/2000/svg"> và kết thúc bằng </svg>.
@@ -655,22 +633,28 @@ YÊU CẦU BẮT BUỘC:
 4. Có khung tiêu đề nhỏ ở góc trên.
 5. KHÔNG chứa bất kỳ văn bản giải thích hay Markdown nào ngoài mã <svg ...></svg>.`;
 
-        const svgRes = await ai.models.generateContent({
-          model: "gemini-2.5-flash",
-          contents: svgPrompt,
-        });
+      const candidateModels = getModelCascadeList();
+      for (const modelName of candidateModels) {
+        try {
+          const svgRes = await ai.models.generateContent({
+            model: modelName,
+            contents: svgPrompt,
+          });
 
-        let svgText = svgRes.text || "";
-        if (svgText.includes("<svg") && svgText.includes("</svg>")) {
-          const start = svgText.indexOf("<svg");
-          const end = svgText.lastIndexOf("</svg>") + 6;
-          svgText = svgText.substring(start, end);
-          const base64Svg = Buffer.from(svgText, "utf-8").toString("base64");
-          imageDataUrl = `data:image/svg+xml;base64,${base64Svg}`;
-          isSvgFallback = true;
+          let svgText = svgRes.text || "";
+          if (svgText.includes("<svg") && svgText.includes("</svg>")) {
+            const start = svgText.indexOf("<svg");
+            const end = svgText.lastIndexOf("</svg>") + 6;
+            svgText = svgText.substring(start, end);
+            const base64Svg = Buffer.from(svgText, "utf-8").toString("base64");
+            imageDataUrl = `data:image/svg+xml;base64,${base64Svg}`;
+            isSvgFallback = true;
+            modelUsedForSvg = modelName;
+            break;
+          }
+        } catch (e2) {
+          console.warn(`[SVG Cascade] Model ${modelName} failed for SVG generation, trying next model...`);
         }
-      } catch (e2) {
-        // Attempt 2 failed
       }
     }
 
@@ -679,7 +663,7 @@ YÊU CẦU BẮT BUỘC:
         success: true,
         imageDataUrl,
         isSvgFallback,
-        note: isSvgFallback ? "Đã tự động tạo sơ đồ vector SVG minh họa (Dự phòng cho API key miễn phí)" : undefined
+        note: isSvgFallback ? `Đã tự động tạo sơ đồ vector SVG minh họa (Dự phòng thông minh qua ${modelUsedForSvg})` : undefined
       });
     } else {
       return res.json({
