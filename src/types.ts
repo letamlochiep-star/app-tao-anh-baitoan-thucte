@@ -12,6 +12,7 @@ export interface SourceAnalysis {
   commonMistakes: string[];
   visualElements: string[];
   tikzSuitability: string;
+  modelUsed?: string;
 }
 
 export interface ProblemValidation {
@@ -56,6 +57,7 @@ export interface ProblemItem {
   remedies?: string[];
   validation: ProblemValidation;
   isLocked?: boolean;
+  modelUsed?: string;
 }
 
 export interface GenerationOptions {

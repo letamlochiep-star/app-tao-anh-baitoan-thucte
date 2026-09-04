@@ -11,7 +11,8 @@ import {
   AlertTriangle,
   RotateCcw,
   Sparkles,
-  Download
+  Download,
+  Cpu
 } from 'lucide-react';
 import { ProblemItem } from '../types';
 import { MathText } from '../utils/latex';
@@ -99,7 +100,7 @@ export const Tab4Solutions: React.FC<Tab4SolutionsProps> = ({
           </select>
 
           {copiedStatus && (
-            <span className="text-xs font-sans font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-900/10 px-2.5 py-1 border border-emerald-800/30 uppercase tracking-wider">
+            <span className="text-xs font-sans font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950 px-2.5 py-1 rounded border border-emerald-300 dark:border-emerald-800 uppercase tracking-wider">
               ✓ {copiedStatus}
             </span>
           )}
@@ -108,19 +109,19 @@ export const Tab4Solutions: React.FC<Tab4SolutionsProps> = ({
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={handleOpenAll}
-            className="px-3 py-1.5 text-xs font-sans font-bold uppercase tracking-wider border border-[#1A1A1A]/20 dark:border-stone-700 text-[#1A1A1A] dark:text-[#EAE8E3] hover:bg-[#1A1A1A]/5"
+            className="px-3 py-1.5 text-xs font-sans font-semibold rounded border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
           >
             Mở toàn bộ 10 câu
           </button>
           <button
             onClick={handleCloseAll}
-            className="px-3 py-1.5 text-xs font-sans font-bold uppercase tracking-wider border border-[#1A1A1A]/20 dark:border-stone-700 text-[#1A1A1A] dark:text-[#EAE8E3] hover:bg-[#1A1A1A]/5"
+            className="px-3 py-1.5 text-xs font-sans font-semibold rounded border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
           >
             Đóng toàn bộ
           </button>
           <button
             onClick={onToggleShowAnswers}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-sans font-bold uppercase tracking-wider bg-red-800/10 text-red-800 dark:text-red-300 border border-red-800/30 hover:bg-red-800 hover:text-white transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-sans font-semibold rounded bg-blue-50 text-blue-800 dark:bg-blue-950/80 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 transition-colors cursor-pointer"
           >
             {showAnswers ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
             {showAnswers ? 'Ẩn đáp số' : 'Hiện đáp số'}
@@ -128,7 +129,7 @@ export const Tab4Solutions: React.FC<Tab4SolutionsProps> = ({
           {onNavigateToTab && (
             <button
               onClick={() => onNavigateToTab('export')}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-sans font-bold uppercase tracking-wider bg-red-800 text-white hover:bg-red-900 border border-red-900 transition-colors shadow-xs"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-sans font-bold uppercase tracking-wider rounded bg-blue-700 text-white hover:bg-blue-800 border border-blue-800 transition-colors shadow-2xs cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
               Tải File Word
@@ -145,60 +146,67 @@ export const Tab4Solutions: React.FC<Tab4SolutionsProps> = ({
           return (
             <div
               key={p.id}
-              className="bg-white dark:bg-[#1E1D1B] border border-[#1A1A1A]/15 dark:border-stone-800 overflow-hidden shadow-xs transition-all"
+              className="bg-white dark:bg-[#0F172A] border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden shadow-xs transition-all"
             >
               {/* Accordion Header */}
               <button
                 onClick={() => toggleAccordion(p.id)}
-                className="w-full p-4 flex items-center justify-between text-left hover:bg-[#F7F5F2] dark:hover:bg-stone-800/50 transition-colors"
+                className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
               >
                 <div className="flex items-center gap-3">
-                  <span className="w-8 h-8 bg-[#1A1A1A] dark:bg-[#EAE8E3] text-white dark:text-[#141413] font-serif font-bold text-xs flex items-center justify-center shrink-0">
+                  <span className="w-8 h-8 rounded bg-blue-900 text-white dark:bg-blue-600 font-mono font-bold text-xs flex items-center justify-center shrink-0">
                     C{p.id < 10 ? `0${p.id}` : p.id}
                   </span>
                   <div>
-                    <h3 className="text-base font-serif-display font-bold text-[#1A1A1A] dark:text-[#EAE8E3]">
-                      Lời giải Câu {p.id}: {p.title || `Bài toán thực tế`}
-                    </h3>
-                    <p className="text-xs font-sans text-[#1A1A1A]/60 dark:text-[#EAE8E3]/60 font-medium">
-                      Đáp số: <span className="font-bold text-red-800 dark:text-red-400">{p.finalAnswer || p.correctOption}</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-base font-sans font-bold text-slate-900 dark:text-slate-100">
+                        Lời giải Câu {p.id}: {p.title || `Bài toán thực tế`}
+                      </h3>
+                      {p.modelUsed && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded text-[10px] font-mono font-medium bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                          <Cpu className="w-2.5 h-2.5" /> {p.modelUsed}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs font-sans text-slate-500 font-medium">
+                      Đáp số: <span className="font-bold text-blue-700 dark:text-blue-400">{p.finalAnswer || p.correctOption}</span>
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2 font-sans">
-                  <span className="text-xs font-bold uppercase tracking-wider text-[#1A1A1A]/60 dark:text-[#EAE8E3]/60">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
                     {isOpen ? 'Thu gọn' : 'Xem lời giải'}
                   </span>
                   {isOpen ? (
-                    <ChevronUp className="w-5 h-5 text-[#1A1A1A]/60 dark:text-[#EAE8E3]/60" />
+                    <ChevronUp className="w-5 h-5 text-slate-500" />
                   ) : (
-                    <ChevronDown className="w-5 h-5 text-[#1A1A1A]/60 dark:text-[#EAE8E3]/60" />
+                    <ChevronDown className="w-5 h-5 text-slate-500" />
                   )}
                 </div>
               </button>
 
               {/* Accordion Body */}
               {isOpen && (
-                <div className="p-5 border-t border-[#1A1A1A]/10 dark:border-stone-800 bg-[#F7F5F2]/40 dark:bg-[#141413]/40 space-y-5 animate-fade-in">
+                <div className="p-5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 space-y-5 animate-fade-in">
                   {/* Problem text reminder */}
-                  <div className="p-4 bg-white dark:bg-[#1E1D1B] border border-[#1A1A1A]/15 dark:border-stone-800 text-xs sm:text-sm text-[#1A1A1A] dark:text-[#EAE8E3]">
-                    <span className="font-serif-display font-bold text-[#1A1A1A] dark:text-[#EAE8E3] block mb-1">ĐỀ BÀI:</span>
+                  <div className="p-4 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs sm:text-sm text-slate-900 dark:text-slate-100">
+                    <span className="font-sans font-bold text-slate-900 dark:text-slate-100 block mb-1">ĐỀ BÀI:</span>
                     <MathText content={p.problemText} />
                   </div>
 
                   {/* Mode: Answer Only */}
                   {viewMode === 'answerOnly' && (
-                    <div className="p-4 bg-red-900/5 dark:bg-red-950/40 border border-red-800/30 text-red-900 dark:text-red-200 font-sans font-bold text-sm tracking-wider uppercase">
+                    <div className="p-4 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-lg text-blue-900 dark:text-blue-200 font-sans font-bold text-sm tracking-wider uppercase">
                       ĐÁP SỐ CHÍNH XÁC: {p.finalAnswer || p.correctOption}
                     </div>
                   )}
 
                   {/* Mode: Hints */}
                   {viewMode === 'hints' && (
-                    <div className="space-y-2 p-4 bg-red-900/5 dark:bg-red-950/40 border border-red-800/30 text-xs font-sans text-red-900 dark:text-red-200">
+                    <div className="space-y-2 p-4 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-lg text-xs font-sans text-blue-900 dark:text-blue-200">
                       <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider">
-                        <Lightbulb className="w-4 h-4 text-red-800" />
+                        <Lightbulb className="w-4 h-4 text-blue-700" />
                         <span>GỢI Ý GIẢI:</span>
                       </div>
                       <p className="leading-relaxed">{p.solutionSummary || p.solutionSteps?.[0]}</p>
@@ -211,26 +219,26 @@ export const Tab4Solutions: React.FC<Tab4SolutionsProps> = ({
                     viewMode === 'basic' ||
                     viewMode === 'teacher' ||
                     viewMode === 'student') && (
-                    <div className="space-y-5 text-xs sm:text-sm text-[#1A1A1A] dark:text-[#EAE8E3]">
+                    <div className="space-y-5 text-xs sm:text-sm text-slate-900 dark:text-slate-100">
                       {/* 1. Problem Analysis */}
                       <div className="space-y-1">
-                        <h4 className="font-sans font-bold text-red-800 dark:text-red-400 uppercase text-[10px] tracking-[0.2em]">
+                        <h4 className="font-sans font-bold text-blue-700 dark:text-blue-400 uppercase text-[10px] tracking-wider">
                           1. Phân tích đề toán
                         </h4>
-                        <ul className="list-disc list-inside space-y-0.5 text-xs text-[#1A1A1A]/80 dark:text-[#EAE8E3]/80 font-sans">
+                        <ul className="list-disc list-inside space-y-0.5 text-xs text-slate-600 dark:text-slate-300 font-sans">
                           <li><strong>Dữ kiện cho:</strong> {p.givenData?.join(', ') || 'Đã cho trong đề bài'}</li>
-                          <li><strong>Đại lượng tìm:</strong> {p.requiredResult || 'Chiều dài, chiều rộng'}</li>
-                          <li><strong>Đơn vị:</strong> {p.units?.join(', ') || 'm, m^2'}</li>
+                          <li><strong>Đại lượng tìm:</strong> {p.requiredResult || 'Giá trị cần tìm'}</li>
+                          <li><strong>Đơn vị:</strong> {p.units?.join(', ') || 'm, m^2, đồng...'}</li>
                         </ul>
                       </div>
 
                       {/* 2. Formulas */}
                       {p.latexFormulas && p.latexFormulas.length > 0 && (
                         <div className="space-y-1">
-                          <h4 className="font-sans font-bold text-red-800 dark:text-red-400 uppercase text-[10px] tracking-[0.2em]">
+                          <h4 className="font-sans font-bold text-blue-700 dark:text-blue-400 uppercase text-[10px] tracking-wider">
                             2. Công thức toán học sử dụng
                           </h4>
-                          <div className="p-3 bg-white dark:bg-[#1E1D1B] border border-[#1A1A1A]/15 dark:border-stone-800 font-mono text-xs">
+                          <div className="p-3 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg font-mono text-xs">
                             {p.latexFormulas.map((f, fIdx) => (
                               <MathText key={fIdx} content={f} block />
                             ))}
@@ -240,7 +248,7 @@ export const Tab4Solutions: React.FC<Tab4SolutionsProps> = ({
 
                       {/* 3. Detailed Step-by-Step Solution */}
                       <div className="space-y-2">
-                        <h4 className="font-sans font-bold text-red-800 dark:text-red-400 uppercase text-[10px] tracking-[0.2em]">
+                        <h4 className="font-sans font-bold text-blue-700 dark:text-blue-400 uppercase text-[10px] tracking-wider">
                           3. Hướng dẫn giải chi tiết
                         </h4>
                         <div className="space-y-2.5">
@@ -248,9 +256,9 @@ export const Tab4Solutions: React.FC<Tab4SolutionsProps> = ({
                             p.solutionSteps.map((step, sIdx) => (
                               <div
                                 key={sIdx}
-                                className="p-3 bg-white dark:bg-[#1E1D1B] border border-[#1A1A1A]/15 dark:border-stone-800 space-y-1"
+                                className="p-3 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg space-y-1"
                               >
-                                <span className="font-sans font-bold text-xs text-red-800 dark:text-red-400 block uppercase tracking-wider">
+                                <span className="font-sans font-bold text-xs text-blue-700 dark:text-blue-400 block uppercase tracking-wider">
                                   Bước {sIdx + 1}:
                                 </span>
                                 <MathText content={step} />
@@ -263,18 +271,18 @@ export const Tab4Solutions: React.FC<Tab4SolutionsProps> = ({
                       </div>
 
                       {/* 4. Final Answer Box */}
-                      <div className="p-4 bg-emerald-900/10 dark:bg-emerald-950/60 border border-emerald-800/40 text-emerald-900 dark:text-emerald-200 font-sans font-bold text-sm sm:text-base flex items-center justify-between">
+                      <div className="p-4 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 rounded-lg text-emerald-900 dark:text-emerald-200 font-sans font-bold text-sm sm:text-base flex items-center justify-between">
                         <span>ĐÁP SỐ CHÍNH XÁC:</span>
-                        <span className="text-base sm:text-lg font-extrabold text-emerald-800 dark:text-emerald-300">
+                        <span className="text-base sm:text-lg font-extrabold text-emerald-700 dark:text-emerald-300">
                           {p.finalAnswer || p.correctOption}
                         </span>
                       </div>
 
                       {/* 5. Result Verification */}
                       {p.verificationMethod && (
-                        <div className="p-3.5 bg-[#F7F5F2] dark:bg-[#141413] border border-[#1A1A1A]/15 dark:border-stone-800 space-y-1 text-xs font-sans text-[#1A1A1A] dark:text-[#EAE8E3]">
-                          <span className="font-bold flex items-center gap-1 uppercase tracking-wider text-red-800">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-red-800" />
+                        <div className="p-3.5 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg space-y-1 text-xs font-sans text-slate-800 dark:text-slate-200">
+                          <span className="font-bold flex items-center gap-1 uppercase tracking-wider text-blue-700 dark:text-blue-400">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-blue-700" />
                             Kiểm tra kết quả:
                           </span>
                           <p>{p.verificationMethod}</p>
@@ -283,9 +291,9 @@ export const Tab4Solutions: React.FC<Tab4SolutionsProps> = ({
 
                       {/* 6. Common Student Mistakes & Remedies */}
                       {p.commonMistakes && p.commonMistakes.length > 0 && (
-                        <div className="p-3.5 bg-red-900/5 dark:bg-red-950/40 border border-red-800/30 space-y-1 text-xs font-sans text-red-900 dark:text-red-200">
-                          <span className="font-bold flex items-center gap-1 text-red-800 dark:text-red-300 uppercase tracking-wider">
-                            <AlertTriangle className="w-3.5 h-3.5 text-red-800" />
+                        <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg space-y-1 text-xs font-sans text-amber-900 dark:text-amber-200">
+                          <span className="font-bold flex items-center gap-1 text-amber-800 dark:text-amber-300 uppercase tracking-wider">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
                             Lỗi học sinh thường mắc & Cách khắc phục:
                           </span>
                           <ul className="list-disc list-inside space-y-1 pt-1">
@@ -302,7 +310,7 @@ export const Tab4Solutions: React.FC<Tab4SolutionsProps> = ({
                   <div className="flex justify-end pt-2">
                     <button
                       onClick={() => copySolution(p)}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-sans font-bold uppercase tracking-[0.12em] bg-[#1A1A1A] text-white dark:bg-[#EAE8E3] dark:text-[#141413]"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-sans font-semibold rounded border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                     >
                       <Copy className="w-3.5 h-3.5" />
                       Sao chép lời giải Câu {p.id}

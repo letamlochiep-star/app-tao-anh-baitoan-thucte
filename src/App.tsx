@@ -233,7 +233,7 @@ export function App() {
     }
   };
 
-  // 12. Step 2: Generate 10 Similar Problems (Progress Steps 1-11 requirement)
+  // 12. Step 2: Generate 10 Similar Problems
   const handleGenerate10 = async () => {
     if (!sourceProblemText.trim()) {
       alert('Vui lòng nhập hoặc nạp một đề bài toán gốc.');
@@ -243,17 +243,17 @@ export function App() {
     setIsGenerating(true);
 
     const steps = [
-      { step: '1. Đang kiểm tra API key...', pct: 10 },
+      { step: '1. Đang kiểm tra API key & mô hình...', pct: 10 },
       { step: '2. Đang phân tích bài toán gốc...', pct: 20 },
-      { step: '3. Đang nhận diện kiến thức...', pct: 30 },
+      { step: '3. Đang nhận diện kiến thức trọng tâm...', pct: 30 },
       { step: '4. Đang xây dựng dữ liệu thực tế...', pct: 40 },
-      { step: '5. Đang tạo 10 bài toán...', pct: 50 },
-      { step: '6. Đang tính và kiểm tra đáp án...', pct: 60 },
-      { step: '7. Đang tạo câu lệnh hình ảnh...', pct: 70 },
-      { step: '8. Đang tạo mã TikZ...', pct: 80 },
-      { step: '9. Đang xây dựng lời giải...', pct: 90 },
-      { step: '10. Đang kiểm tra cấu trúc đầu ra...', pct: 95 },
-      { step: '11. Đang hoàn thiện kết quả...', pct: 100 },
+      { step: '5. Đang tạo 10 bài toán thực tế...', pct: 50 },
+      { step: '6. Đang kiểm tra nghiệm và công thức LaTeX...', pct: 60 },
+      { step: '7. Đang tạo câu lệnh hình ảnh minh họa...', pct: 70 },
+      { step: '8. Đang tạo mã TikZ Overleaf...', pct: 80 },
+      { step: '9. Đang xây dựng lời giải chi tiết...', pct: 90 },
+      { step: '10. Đang hoàn thiện cấu trúc...', pct: 95 },
+      { step: '11. Đã hoàn tất 10 bài toán!', pct: 100 },
     ];
 
     let currentStepIdx = 0;
@@ -263,7 +263,7 @@ export function App() {
         setProgressStep(steps[currentStepIdx].step);
         setProgressPercent(steps[currentStepIdx].pct);
       }
-    }, 1500);
+    }, 1200);
 
     try {
       setProgressStep(steps[0].step);
@@ -334,7 +334,7 @@ export function App() {
         setProblems((prev) =>
           prev.map((p) => (p.id === id ? { ...data.problem, id, isLocked: false } : p))
         );
-        alert(`Đã tạo mới thành công Câu ${id}!`);
+        alert(`Đã tạo mới thành công Câu ${id} (AI Model: ${data.modelUsed || selectedModel})!`);
       } else {
         const errMsg = data.error || `Không thể tạo lại Câu ${id}.`;
         alert(errMsg);
@@ -397,6 +397,8 @@ export function App() {
             isGenerating={isGenerating}
             progressStep={progressStep}
             progressPercent={progressPercent}
+            apiKey={apiKey}
+            selectedModel={selectedModel}
             onChangeSourceText={setSourceProblemText}
             onChangeOptions={setOptions}
             onAnalyzeProblem={handleAnalyzeProblem}
@@ -462,7 +464,7 @@ export function App() {
         )}
       </main>
 
-      {/* Footer (Strictly Section XXIII requirement) */}
+      {/* Footer */}
       <footer className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-6 mt-12 text-center text-xs text-slate-500 font-medium">
         <div className="max-w-7xl mx-auto px-4">
           <p>{BRANDING_DEFAULT}</p>

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   Upload,
   FileText,
@@ -14,7 +14,10 @@ import {
   Search,
   Save,
   Loader2,
-  FileCode
+  FileCode,
+  Camera,
+  Cpu,
+  ImageIcon
 } from 'lucide-react';
 import { GenerationOptions, SourceAnalysis } from '../types';
 import {
@@ -29,7 +32,7 @@ import {
   IMAGE_STYLES
 } from '../constants';
 import { MathText } from '../utils/latex';
-import { extractTextFromFile } from '../utils/fileExtractor';
+import { extractTextFromFile, formatFileSize } from '../utils/fileExtractor';
 
 interface Tab1InputProps {
   sourceProblemText: string;
@@ -39,6 +42,8 @@ interface Tab1InputProps {
   isGenerating: boolean;
   progressStep: string;
   progressPercent: number;
+  apiKey?: string;
+  selectedModel?: string;
   onChangeSourceText: (text: string) => void;
   onChangeOptions: (options: GenerationOptions) => void;
   onAnalyzeProblem: () => void;
@@ -67,6 +72,8 @@ export const Tab1Input: React.FC<Tab1InputProps> = ({
   isGenerating,
   progressStep,
   progressPercent,
+  apiKey = '',
+  selectedModel = 'gemini-3.6-flash',
   onChangeSourceText,
   onChangeOptions,
   onAnalyzeProblem,
@@ -79,6 +86,7 @@ export const Tab1Input: React.FC<Tab1InputProps> = ({
   onUpdateAnalysis,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [customContextInput, setCustomContextInput] = useState('');
 
@@ -88,10 +96,95 @@ export const Tab1Input: React.FC<Tab1InputProps> = ({
   const [fileMeta, setFileMeta] = useState<ExtractedFileMeta | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
 
-  // File upload handler supporting DOCX, PDF, TXT, MD
+  // OCR Image Processing State
+  const [isOcrProcessing, setIsOcrProcessing] = useState(false);
+  const [ocrStatus, setOcrStatus] = useState('');
+
+  // OCR Image Processor
+  const processImageFileForOcr = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      setFileError('Tệp được chọn không phải là hình ảnh.');
+      return;
+    }
+
+    setFileError(null);
+    setIsOcrProcessing(true);
+    setOcrStatus(`Đang xử lý ảnh "${file.name}" qua AI Multimodal OCR...`);
+
+    try {
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = (e) => reject(e);
+      });
+      reader.readAsDataURL(file);
+      const base64Data = await base64Promise;
+
+      const res = await fetch('/api/gemini/ocr-math', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64: base64Data,
+          mimeType: file.type,
+          apiKey,
+          model: selectedModel,
+        }),
+      });
+
+      const result = await res.json();
+      if (result.success && result.extractedText) {
+        onChangeSourceText(result.extractedText);
+        setFileMeta({
+          fileName: file.name,
+          fileType: `ẢNH (OCR: ${result.modelUsed || 'Multimodal'})`,
+          fileSizeFormatted: formatFileSize(file.size),
+          charCount: result.extractedText.length,
+        });
+      } else {
+        const msg = result.error || 'Không thể nhận diện nội dung từ ảnh.';
+        setFileError(msg);
+        if (msg.includes('API Key') || msg.includes('Chưa nhập') || msg.includes('chưa cấu hình')) {
+          onOpenApiKeyModal();
+        }
+      }
+    } catch (err: any) {
+      setFileError(`Lỗi kết nối OCR: ${err?.message || 'Không xác định'}`);
+    } finally {
+      setIsOcrProcessing(false);
+      setOcrStatus('');
+      if (imageInputRef.current) imageInputRef.current.value = '';
+    }
+  };
+
+  // Listen to paste events for easy screenshot OCR (Ctrl+V)
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          const blob = items[i].getAsFile();
+          if (blob) {
+            processImageFileForOcr(blob);
+            break;
+          }
+        }
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [apiKey, selectedModel]);
+
+  // File upload handler supporting DOCX, PDF, TXT, MD, PNG, JPG
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (file.type.startsWith('image/')) {
+      await processImageFileForOcr(file);
+      return;
+    }
 
     setFileError(null);
     setIsExtractingFile(true);
@@ -111,9 +204,6 @@ export const Tab1Input: React.FC<Tab1InputProps> = ({
           charCount: result.charCount,
           warning: result.warning,
         });
-        if (result.warning) {
-          setFileError(null);
-        }
       } else {
         setFileError(result.error || 'Không thể trích xuất nội dung từ tệp này.');
         setFileMeta(null);
@@ -162,7 +252,7 @@ export const Tab1Input: React.FC<Tab1InputProps> = ({
       ? GRADES_THPT
       : [...GRADES_THCS, ...GRADES_THPT];
 
-  const isProcessing = isExtractingFile || isAnalyzing || isGenerating;
+  const isProcessing = isExtractingFile || isOcrProcessing || isAnalyzing || isGenerating;
   const isButtonDisabled = isProcessing || !sourceProblemText.trim();
 
   return (
@@ -182,7 +272,7 @@ export const Tab1Input: React.FC<Tab1InputProps> = ({
                 NHẬP ĐỀ BÀI TOÁN GỐC
               </h2>
               <p className="text-xs text-slate-600 dark:text-slate-400 font-sans">
-                Dán văn bản toán hoặc tải tệp Word (.docx), PDF (.pdf), TXT, MD
+                Dán văn bản, chụp ảnh màn hình (Ctrl+V) hoặc tải tệp Word (.docx), PDF (.pdf), Ảnh (.png/.jpg)
               </p>
             </div>
           </div>
@@ -192,38 +282,69 @@ export const Tab1Input: React.FC<Tab1InputProps> = ({
               type="file"
               ref={fileInputRef}
               onChange={handleFileUpload}
-              accept=".docx,.pdf,.txt,.md"
+              accept=".docx,.pdf,.txt,.md,.png,.jpg,.jpeg,.webp"
               className="hidden"
             />
+            <input
+              type="file"
+              ref={imageInputRef}
+              onChange={(e) => e.target.files?.[0] && processImageFileForOcr(e.target.files[0])}
+              accept="image/*"
+              className="hidden"
+            />
+
+            <button
+              onClick={() => imageInputRef.current?.click()}
+              disabled={isProcessing}
+              title="Nhận diện đề bài toán từ file ảnh hoặc chụp màn hình"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-sans font-semibold rounded bg-emerald-50 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100 disabled:opacity-50 transition-colors shadow-2xs cursor-pointer"
+            >
+              <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              📷 Nhận diện ảnh (OCR Math)
+            </button>
+
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={isProcessing}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-sans font-semibold rounded border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors shadow-2xs"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-sans font-semibold rounded border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors shadow-2xs cursor-pointer"
             >
               <Upload className="w-3.5 h-3.5 text-blue-700 dark:text-blue-400" />
-              Tải tệp DOCX / PDF / TXT / MD
+              Tải DOCX / PDF / TXT
             </button>
+
             <button
               onClick={onLoadSample}
               disabled={isProcessing}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-sans font-semibold rounded bg-blue-50 text-blue-800 dark:bg-blue-950/80 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 disabled:opacity-50 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-sans font-semibold rounded bg-blue-50 text-blue-800 dark:bg-blue-950/80 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 disabled:opacity-50 transition-colors cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5" />
               NẠP BÀI MẪU
             </button>
+
             <button
               onClick={() => {
                 onClearData();
                 handleClearUploadedFile();
               }}
               disabled={isProcessing}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-sans font-medium text-rose-700 dark:text-rose-400 hover:underline disabled:opacity-50 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-sans font-medium text-rose-700 dark:text-rose-400 hover:underline disabled:opacity-50 transition-colors cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" />
               Xóa dữ liệu
             </button>
           </div>
         </div>
+
+        {/* OCR Active Loading Indicator */}
+        {isOcrProcessing && (
+          <div className="p-4 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 flex items-center gap-3 text-emerald-800 dark:text-emerald-300">
+            <Loader2 className="w-5 h-5 animate-spin shrink-0 text-emerald-600" />
+            <div className="text-xs font-medium font-sans">
+              <p className="font-bold uppercase tracking-wider">{ocrStatus || 'Đang nhận diện đề toán từ ảnh...'}</p>
+              <p className="text-[11px] opacity-80">AI đang trích xuất văn bản, bảng số liệu và chuyển đổi công thức sang chuẩn LaTeX...</p>
+            </div>
+          </div>
+        )}
 
         {/* File Extraction Active Loading Indicator */}
         {isExtractingFile && (
@@ -241,14 +362,14 @@ export const Tab1Input: React.FC<Tab1InputProps> = ({
           <div className="p-4 rounded-lg bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 flex items-start gap-3 text-rose-800 dark:text-rose-300">
             <XCircle className="w-5 h-5 shrink-0 mt-0.5 text-rose-600 dark:text-rose-400" />
             <div className="text-xs space-y-1 font-sans">
-              <p className="font-bold">LỖI ĐỌC TỆP TÀI LIỆU:</p>
+              <p className="font-bold">LỖI XỬ LÝ TỆP / HÌNH ẢNH:</p>
               <p>{fileError}</p>
             </div>
           </div>
         )}
 
         {/* File Metadata Box & Warning */}
-        {fileMeta && !isExtractingFile && (
+        {fileMeta && !isExtractingFile && !isOcrProcessing && (
           <div className="p-4 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
               <div className="flex items-center gap-2">
@@ -269,7 +390,7 @@ export const Tab1Input: React.FC<Tab1InputProps> = ({
               </div>
               <button
                 onClick={handleClearUploadedFile}
-                className="text-[11px] text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 underline"
+                className="text-[11px] text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 underline cursor-pointer"
               >
                 Đóng thông tin tệp
               </button>
@@ -291,18 +412,23 @@ export const Tab1Input: React.FC<Tab1InputProps> = ({
             <label className="block text-xs font-sans font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
               Văn bản bài toán gốc:
             </label>
-            {sourceProblemText.length > 0 && (
-              <span className="text-[11px] font-sans font-medium text-slate-500 dark:text-slate-400">
-                Độ dài: {sourceProblemText.length.toLocaleString('vi-VN')} ký tự
+            <div className="flex items-center gap-3">
+              <span className="text-[11px] text-slate-500 italic hidden sm:inline">
+                💡 Mẹo: Nhấn Ctrl+V để dán thẳng ảnh chụp đề bài vào đây
               </span>
-            )}
+              {sourceProblemText.length > 0 && (
+                <span className="text-[11px] font-sans font-medium text-slate-500 dark:text-slate-400">
+                  Độ dài: {sourceProblemText.length.toLocaleString('vi-VN')} ký tự
+                </span>
+              )}
+            </div>
           </div>
           <textarea
             value={sourceProblemText}
             onChange={(e) => onChangeSourceText(e.target.value)}
             rows={5}
             disabled={isProcessing}
-            placeholder="Dán đề bài hoặc tải tệp lên. Ví dụ: Một khu vườn hình chữ nhật có chiều dài hơn chiều rộng 8 m. Diện tích khu vườn là 240 m^2. Tính chiều dài và chiều rộng của khu vườn."
+            placeholder="Dán đề bài hoặc tải tệp/ảnh lên. Ví dụ: Một khu vườn hình chữ nhật có chiều dài hơn chiều rộng 8 m. Diện tích khu vườn là 240 m^2. Tính chiều dài và chiều rộng của khu vườn."
             className="w-full p-3.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/90 text-slate-900 dark:text-slate-100 text-sm focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20 focus:outline-hidden transition-all leading-relaxed font-sans"
           />
         </div>
@@ -312,7 +438,7 @@ export const Tab1Input: React.FC<Tab1InputProps> = ({
           <div>
             <button
               onClick={() => setShowPreview(!showPreview)}
-              className="text-xs font-sans font-bold text-blue-700 dark:text-blue-400 hover:underline inline-flex items-center gap-1 uppercase tracking-wider"
+              className="text-xs font-sans font-bold text-blue-700 dark:text-blue-400 hover:underline inline-flex items-center gap-1 uppercase tracking-wider cursor-pointer"
             >
               {showPreview ? "Ẩn xem trước công thức LaTeX" : "Xem trước hiển thị công thức LaTeX"}
             </button>
@@ -498,7 +624,7 @@ export const Tab1Input: React.FC<Tab1InputProps> = ({
                   type="button"
                   key={ctx}
                   onClick={() => toggleContext(ctx)}
-                  className={`px-3 py-1.5 text-xs font-sans font-semibold rounded-full border transition-all ${
+                  className={`px-3 py-1.5 text-xs font-sans font-semibold rounded-full border transition-all cursor-pointer ${
                     isSelected
                       ? 'bg-blue-800 text-white dark:bg-blue-600 dark:text-white border-blue-800 dark:border-blue-600 shadow-2xs'
                       : 'bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:border-blue-500'
@@ -523,7 +649,7 @@ export const Tab1Input: React.FC<Tab1InputProps> = ({
             <button
               onClick={addCustomContext}
               type="button"
-              className="px-3 py-1.5 rounded bg-blue-800 dark:bg-blue-600 text-white text-xs font-sans font-semibold uppercase tracking-wider shrink-0"
+              className="px-3 py-1.5 rounded bg-blue-800 dark:bg-blue-600 text-white text-xs font-sans font-semibold uppercase tracking-wider shrink-0 cursor-pointer"
             >
               Thêm
             </button>
@@ -590,7 +716,7 @@ export const Tab1Input: React.FC<Tab1InputProps> = ({
       {/* SECTION 3: Editable Analysis Table */}
       {analysis && (
         <div className="bg-white dark:bg-[#0F172A] p-6 rounded-lg shadow-sm border border-slate-200 dark:border-slate-800 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
             <div>
               <span className="text-xs font-sans font-bold uppercase tracking-wider text-blue-800 dark:text-blue-400 block">
                 MỤC III &mdash; PHÂN TÍCH CHUYÊN MÔN KHOA HỌC
@@ -602,6 +728,12 @@ export const Tab1Input: React.FC<Tab1InputProps> = ({
               <p className="text-xs text-slate-600 dark:text-slate-400 font-sans">
                 Giáo viên có thể kiểm tra và điều chỉnh các thành phần trước khi sinh 10 bài
               </p>
+            </div>
+
+            {/* Model Badge */}
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-950/80 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300 text-xs font-mono font-semibold self-start sm:self-auto">
+              <Cpu className="w-3.5 h-3.5 text-blue-600" />
+              <span>AI: {analysis.modelUsed || selectedModel || 'gemini-3.6-flash'}</span>
             </div>
           </div>
 

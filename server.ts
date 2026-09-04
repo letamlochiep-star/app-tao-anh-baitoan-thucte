@@ -7,10 +7,10 @@ import mammoth from "mammoth";
 const app = express();
 const PORT = 3000;
 
-app.use(express.json({ limit: "20mb" }));
-app.use(express.urlencoded({ extended: true, limit: "20mb" }));
+app.use(express.json({ limit: "25mb" }));
+app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
-// CORS middleware to allow cross-origin requests from any port/client
+// CORS middleware to allow cross-origin requests from any client
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
@@ -21,6 +21,17 @@ app.use((req, res, next) => {
   next();
 });
 
+// Utility to parse single or multiple API Keys (comma, semicolon, or newline separated)
+function parseApiKeys(raw?: string): string[] {
+  const envKey = process.env.GEMINI_API_KEY || "";
+  const input = raw?.trim() || envKey;
+  if (!input) return [];
+  return input
+    .split(/[\n\r,;]+/)
+    .map((k) => k.trim())
+    .filter((k) => k.length > 5);
+}
+
 // Utility to mask API Key (showing only last 4 chars)
 function maskApiKey(key?: string): string {
   if (!key || key.length < 4) return "••••••••";
@@ -28,8 +39,7 @@ function maskApiKey(key?: string): string {
 }
 
 // Utility to create GoogleGenAI instance safely
-function getGenAIClient(userKey?: string) {
-  const apiKey = userKey?.trim() || process.env.GEMINI_API_KEY || "";
+function getGenAIClient(apiKey: string) {
   if (!apiKey) {
     throw new Error("Chưa nhập Gemini API Key. Vui lòng cấu hình API Key.");
   }
@@ -43,17 +53,20 @@ function getGenAIClient(userKey?: string) {
   });
 }
 
-// Sanitizes error messages so no API key or system prompt leaks
+// Sanitizes error messages so no API key or sensitive data leaks
 function sanitizeError(err: any, keyUsed?: string): string {
   let msg = err?.message || String(err || "Lỗi không xác định");
   if (keyUsed) {
-    msg = msg.replaceAll(keyUsed, maskApiKey(keyUsed));
+    const keys = parseApiKeys(keyUsed);
+    keys.forEach((k) => {
+      msg = msg.replaceAll(k, maskApiKey(k));
+    });
   }
   if (msg.includes("API_KEY_INVALID") || msg.includes("API key not valid")) {
     return "API Key không hợp lệ. Vui lòng kiểm tra lại khóa đã sao chép từ Google AI Studio.";
   }
   if (msg.includes("RESOURCE_EXHAUSTED") || msg.includes("Quota exceeded") || msg.includes("429")) {
-    return "API key đã đạt giới hạn sử dụng tạm thời. Vui lòng thử lại sau vài giây hoặc đổi key khác.";
+    return "Tất cả API key đã đạt giới hạn sử dụng tạm thời. Vui lòng thử lại sau vài giây hoặc thêm key dự phòng.";
   }
   if (msg.includes("MODEL_NOT_FOUND") || msg.includes("is not found")) {
     return "Mô hình không khả dụng với API key này. Hệ thống sẽ tự động chuyển sang mô hình tương thích.";
@@ -128,122 +141,211 @@ function getModelCascadeList(requestedModel?: string): string[] {
   return Array.from(new Set(list)).filter(Boolean);
 }
 
-// 1. API: Test API Key Connection
-app.post("/api/gemini/test-key", async (req, res) => {
-  const { apiKey } = req.body;
-  const keyToUse = apiKey?.trim() || process.env.GEMINI_API_KEY || "";
-  if (!keyToUse) {
-    return res.json({
-      success: false,
-      message: "Bạn chưa nhập Gemini API Key.",
-      maskedKey: "••••••••",
-    });
-  }
-
-  try {
-    const ai = getGenAIClient(keyToUse);
-    let testSuccess = false;
-    let successfulModel = "";
-    let lastError: any = null;
-
-    // Loop through prioritized models cascade
-    for (const modelName of PRIORITY_GEMINI_MODELS) {
-      try {
-        const response = await ai.models.generateContent({
-          model: modelName,
-          contents: "Xin chào",
-        });
-        if (response && response.text) {
-          testSuccess = true;
-          successfulModel = modelName;
-          break;
-        }
-      } catch (err: any) {
-        lastError = err;
-        const msg = err?.message || "";
-        if (msg.includes("API_KEY_INVALID") || msg.includes("API key not valid")) {
-          // If key is fundamentally invalid, stop trying other models
-          break;
-        }
-        console.warn(`[Test Connection Warning] Model ${modelName} failed: ${msg.slice(0, 100)}. Trying next model...`);
-      }
-    }
-
-    if (testSuccess) {
-      return res.json({
-        success: true,
-        message: `Kết nối Gemini API thành công (Mô hình khả dụng: ${successfulModel})! API Key hợp lệ.`,
-        modelUsed: successfulModel,
-        maskedKey: maskApiKey(keyToUse),
-      });
-    } else {
-      throw lastError || new Error("Không nhận được phản hồi từ bất kỳ mô hình Gemini nào");
-    }
-  } catch (err: any) {
-    return res.json({
-      success: false,
-      message: sanitizeError(err, keyToUse),
-      maskedKey: maskApiKey(keyToUse),
-    });
-  }
-});
-
-// Helper for generating content with prioritized candidate model fallbacks and schema fallback
+// Core helper for generating content with Multi-Key Rotation + Prioritized Model Cascade + Exponential Backoff
 async function generateContentWithFallback(
-  ai: GoogleGenAI,
+  apiKeyInput: string | undefined,
   requestedModel: string,
-  prompt: string,
+  contents: any,
   config?: any
-): Promise<{ text: string; modelUsed: string }> {
+): Promise<{ text: string; modelUsed: string; keyUsed: string }> {
+  const keys = parseApiKeys(apiKeyInput);
+  if (keys.length === 0) {
+    throw new Error("Chưa nhập Gemini API Key. Vui lòng cấu hình API Key.");
+  }
+
   const modelsToTry = getModelCascadeList(requestedModel);
   let lastError: any = null;
 
-  for (const modelName of modelsToTry) {
-    // Attempt 1: With provided config (e.g. schema + system instruction)
+  // Outer loop: Cycle through available keys (Multi-Key Rotation / Load Balancer)
+  for (let kIdx = 0; kIdx < keys.length; kIdx++) {
+    const currentKey = keys[kIdx];
+    let ai: GoogleGenAI;
     try {
-      const res = await ai.models.generateContent({
-        model: modelName,
-        contents: prompt,
-        config: config || {},
-      });
-      if (res.text) {
-        return { text: res.text, modelUsed: modelName };
-      }
-    } catch (err: any) {
-      lastError = err;
-      const errMsg = err?.message || String(err);
-      console.warn(`[Gemini Cascade Warning] Mô hình "${modelName}" gặp lỗi (${errMsg.slice(0, 120)}). Đang tự động chuyển sang mô hình tiếp theo trong danh sách ưu tiên...`);
+      ai = getGenAIClient(currentKey);
+    } catch (e) {
+      continue;
     }
 
-    // Attempt 2: If config contained responseSchema, try without responseSchema but with JSON prompt instruction
-    if (config?.responseSchema) {
+    // Inner loop: Cycle through prioritized model cascade
+    for (const modelName of modelsToTry) {
+      // Attempt 1: With full config (schema + systemInstruction)
       try {
-        const fallbackConfig = {
-          systemInstruction: config.systemInstruction,
-          responseMimeType: "application/json",
-        };
         const res = await ai.models.generateContent({
           model: modelName,
-          contents: prompt + "\n\nBẮT BUỘC trả về đúng cấu trúc JSON, không thêm bất kỳ văn bản ngoài JSON.",
-          config: fallbackConfig,
+          contents: contents,
+          config: config || {},
         });
-        if (res.text) {
-          return { text: res.text, modelUsed: modelName };
+        if (res && res.text) {
+          return { text: res.text, modelUsed: modelName, keyUsed: currentKey };
         }
       } catch (err: any) {
         lastError = err;
         const errMsg = err?.message || String(err);
-        console.warn(`[Gemini Cascade Warning] Mô hình "${modelName}" (chế độ prompt JSON dự phòng) gặp lỗi (${errMsg.slice(0, 120)}). Tiếp tục chuyển mô hình...`);
+        const isQuota = errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("Quota") || errMsg.includes("429");
+        const isKeyInvalid = errMsg.includes("API_KEY_INVALID") || errMsg.includes("API key not valid");
+
+        console.warn(`[Gemini Cascade Warning] Key ${kIdx + 1}/${keys.length} (${maskApiKey(currentKey)}) | Model "${modelName}" error: ${errMsg.slice(0, 100)}`);
+
+        // Backoff / Delay if rate-limited
+        if (isQuota) {
+          console.warn(`[Gemini Backoff] Gặp giới hạn 429/Quota. Đang nghỉ 800ms trước khi thử mô hình/key tiếp theo...`);
+          await new Promise((resolve) => setTimeout(resolve, 800));
+        }
+
+        if (isKeyInvalid) {
+          // Key is permanently invalid, skip remaining models for this key
+          break;
+        }
+      }
+
+      // Attempt 2: If config contained responseSchema, fallback without responseSchema but with JSON prompt instruction
+      if (config?.responseSchema) {
+        try {
+          const fallbackConfig = {
+            systemInstruction: config.systemInstruction,
+            responseMimeType: "application/json",
+          };
+          const fallbackContents = typeof contents === "string"
+            ? contents + "\n\nBẮT BUỘC trả về đúng cấu trúc JSON, không thêm bất kỳ văn bản ngoài JSON."
+            : contents;
+
+          const res = await ai.models.generateContent({
+            model: modelName,
+            contents: fallbackContents,
+            config: fallbackConfig,
+          });
+          if (res && res.text) {
+            return { text: res.text, modelUsed: modelName, keyUsed: currentKey };
+          }
+        } catch (err: any) {
+          lastError = err;
+          const errMsg = err?.message || String(err);
+          console.warn(`[Gemini Cascade Warning] Model "${modelName}" (JSON fallback) error: ${errMsg.slice(0, 100)}`);
+        }
       }
     }
   }
 
-  throw lastError || new Error("Không thể gọi Gemini API thành công sau khi đã thử toàn bộ danh sách mô hình ưu tiên.");
+  throw lastError || new Error("Không thể gọi Gemini API thành công sau khi đã thử tất cả API Key và mô hình ưu tiên.");
 }
 
-// 2. API: Analyze Source Problem
+// 1. API: Test API Key Connection (Supports Multi-Key load testing)
+app.post("/api/gemini/test-key", async (req, res) => {
+  const { apiKey } = req.body;
+  const keys = parseApiKeys(apiKey);
+  if (keys.length === 0) {
+    return res.json({
+      success: false,
+      message: "Bạn chưa nhập Gemini API Key.",
+      maskedKey: "••••••••",
+      activeKeyCount: 0,
+    });
+  }
+
+  let connectedKeysCount = 0;
+  let successfulModel = "";
+  let lastError: any = null;
+
+  for (const key of keys) {
+    try {
+      const ai = getGenAIClient(key);
+      for (const modelName of PRIORITY_GEMINI_MODELS) {
+        try {
+          const response = await ai.models.generateContent({
+            model: modelName,
+            contents: "Xin chào",
+          });
+          if (response && response.text) {
+            connectedKeysCount++;
+            if (!successfulModel) successfulModel = modelName;
+            break;
+          }
+        } catch (err: any) {
+          lastError = err;
+          const msg = err?.message || "";
+          if (msg.includes("API_KEY_INVALID") || msg.includes("API key not valid")) {
+            break;
+          }
+        }
+      }
+    } catch (e: any) {
+      lastError = e;
+    }
+  }
+
+  if (connectedKeysCount > 0) {
+    const maskedDisplay = keys.map((k) => maskApiKey(k)).join(", ");
+    return res.json({
+      success: true,
+      message: `Đã kết nối thành công ${connectedKeysCount}/${keys.length} API Key (Mô hình khả dụng: ${successfulModel})!`,
+      modelUsed: successfulModel,
+      maskedKey: maskedDisplay,
+      activeKeyCount: connectedKeysCount,
+      totalKeysCount: keys.length,
+    });
+  } else {
+    return res.json({
+      success: false,
+      message: sanitizeError(lastError || new Error("Không thể kết nối với các API key đã cung cấp."), apiKey),
+      maskedKey: keys.map((k) => maskApiKey(k)).join(", "),
+      activeKeyCount: 0,
+      totalKeysCount: keys.length,
+    });
+  }
+});
+
+// 2. API: OCR Math Multimodal - Extract Math Problem from Image
+app.post("/api/gemini/ocr-math", async (req, res) => {
+  const { imageBase64, mimeType = "image/png", apiKey, model = "gemini-3.6-flash" } = req.body;
+
+  if (!imageBase64) {
+    return res.status(400).json({ error: "Thiếu dữ liệu hình ảnh." });
+  }
+
+  const rawBase64 = imageBase64.replace(/^data:image\/[a-z]+;base64,/, "");
+
+  const promptText = `Bạn là chuyên gia nhận diện và chuyển đổi bài toán từ hình ảnh sang văn bản và công thức LaTeX.
+Hãy đọc toàn bộ đề bài toán trong hình ảnh được cung cấp:
+1. Chuyển đổi chính xác tất cả câu chữ, số liệu, đơn vị và yêu cầu của bài toán sang tiếng Việt chuẩn.
+2. Tất cả công thức toán học phải được viết chuẩn LaTeX (sử dụng \\( ... \\) cho công thức inline và \\[ ... \\] cho công thức block/dòng riêng).
+3. Đảm bảo giữ nguyên các đại lượng, số liệu đã cho và câu hỏi cần tìm.
+4. Chỉ trả về văn bản đề bài hoàn chỉnh, không thêm lời chào, không thêm giải thích hay markdown code block thừa.`;
+
+  const contents = [
+    {
+      inlineData: {
+        data: rawBase64,
+        mimeType: mimeType || "image/png",
+      },
+    },
+    {
+      text: promptText,
+    },
+  ];
+
+  try {
+    const { text: extractedText, modelUsed } = await generateContentWithFallback(
+      apiKey,
+      model,
+      contents,
+      { systemInstruction: "Bạn là chuyên gia nhận diện đề toán từ ảnh và xuất văn bản chuẩn kèm công thức LaTeX." }
+    );
+
+    return res.json({
+      success: true,
+      extractedText: extractedText.trim(),
+      modelUsed,
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      error: sanitizeError(err, apiKey),
+    });
+  }
+});
+
+// 3. API: Analyze Source Problem
 app.post("/api/gemini/analyze", async (req, res) => {
-  const { problemText, options, apiKey, model = "gemini-2.5-flash" } = req.body;
+  const { problemText, options, apiKey, model = "gemini-3.6-flash" } = req.body;
   if (!problemText || !problemText.trim()) {
     return res.status(400).json({ error: "Vui lòng nhập đề bài gốc." });
   }
@@ -290,14 +392,13 @@ Hãy phân tích chi tiết các thành phần: gradeLevel, grade, topic, proble
         "units",
         "commonMistakes",
         "visualElements",
-        "tikzSuitability"
-      ]
+        "tikzSuitability",
+      ],
     },
   };
 
   try {
-    const ai = getGenAIClient(apiKey);
-    const { text: jsonStr, modelUsed } = await generateContentWithFallback(ai, model, prompt, schemaConfig);
+    const { text: jsonStr, modelUsed } = await generateContentWithFallback(apiKey, model, prompt, schemaConfig);
     let rawData: any = {};
     try {
       rawData = cleanAndParseJson(jsonStr);
@@ -318,15 +419,14 @@ Hãy phân tích chi tiết các thành phần: gradeLevel, grade, topic, proble
       units: Array.isArray(rawData.units) && rawData.units.length > 0 ? rawData.units : ["đơn vị đo"],
       commonMistakes: Array.isArray(rawData.commonMistakes) && rawData.commonMistakes.length > 0 ? rawData.commonMistakes : ["Sai đơn vị đo", "Đặt ẩn không kèm điều kiện thích hợp"],
       visualElements: Array.isArray(rawData.visualElements) && rawData.visualElements.length > 0 ? rawData.visualElements : ["Sơ đồ/Hình vẽ minh họa bối cảnh thực tế"],
-      tikzSuitability: rawData.tikzSuitability || "Thích hợp vẽ sơ đồ minh họa"
+      tikzSuitability: rawData.tikzSuitability || "Thích hợp vẽ sơ đồ minh họa",
+      modelUsed,
     };
 
     return res.json({ success: true, analysis: data, modelUsed });
   } catch (err: any) {
-    // Smart heuristic analysis fallback if AI fails or key is missing
     console.error("Gemini API analyze error, providing smart local analysis:", err?.message || err);
 
-    // Basic rule extraction from problemText
     const textLower = problemText.toLowerCase();
     const isGeometry = textLower.includes("hình") || textLower.includes("diện tích") || textLower.includes("chu vi") || textLower.includes("tam giác") || textLower.includes("chiều dài");
     const isSpeed = textLower.includes("vận tốc") || textLower.includes("quãng đường") || textLower.includes("thời gian") || textLower.includes("km/h");
@@ -345,28 +445,28 @@ Hãy phân tích chi tiết các thành phần: gradeLevel, grade, topic, proble
       units: isGeometry ? ["m", "m^2"] : isSpeed ? ["km", "h", "km/h"] : ["đồng", "%"],
       commonMistakes: ["Không đặt điều kiện cho ẩn số", "Quên đổi đơn vị đo thống nhất", "Không kiểm tra lại điều kiện của nghiệm"],
       visualElements: ["Hình vẽ minh họa mô phỏng bối cảnh toán học thực tế"],
-      tikzSuitability: isGeometry ? "Thích hợp vẽ sơ đồ hình học phẳng bằng TikZ" : "Thích hợp vẽ sơ đồ đoạn thẳng/trục tọa độ bằng TikZ"
+      tikzSuitability: isGeometry ? "Thích hợp vẽ sơ đồ hình học phẳng bằng TikZ" : "Thích hợp vẽ sơ đồ đoạn thẳng/trục tọa độ bằng TikZ",
+      modelUsed: "Offline-Heuristic",
     };
 
     return res.json({
       success: true,
       analysis: fallbackAnalysis,
-      note: "Đã tổng hợp cấu trúc phân tích bài toán (Bạn có thể tùy chỉnh lại ở Mục III trước khi sinh 10 bài)."
+      modelUsed: "Offline-Heuristic",
+      note: "Đã tổng hợp cấu trúc phân tích bài toán (Bạn có thể tùy chỉnh lại ở Mục III trước khi sinh 10 bài).",
     });
   }
 });
 
-// 3. API: Generate 10 Similar Problems
+// 4. API: Generate 10 Similar Problems
 app.post("/api/gemini/generate-10", async (req, res) => {
-  const { problemText, options, analysis, apiKey, model = "gemini-2.5-flash", lockedProblems = [] } = req.body;
+  const { problemText, options, analysis, apiKey, model = "gemini-3.6-flash", lockedProblems = [] } = req.body;
 
   if (!problemText || !problemText.trim()) {
     return res.status(400).json({ error: "Vui lòng nhập đề bài gốc." });
   }
 
   try {
-    const ai = getGenAIClient(apiKey);
-
     const lockedPrompt = lockedProblems.length > 0
       ? `LƯU Ý CỰC KỲ QUAN TRỌNG: Dưới đây là danh sách các câu đã bị KHÓA. Bạn BẮT BUỘC phải giữ nguyên chính xác các câu bị khóa này ở đúng vị trí (id) tương ứng trong mảng 10 câu trả về. Chỉ tạo mới các câu CHƯA bị khóa!\nCác câu bị khóa:\n${JSON.stringify(lockedProblems, null, 2)}`
       : "";
@@ -415,7 +515,7 @@ YÊU CẦU: Hãy tạo ĐÚNG 10 bài toán thực tế tương tự (id từ 1 
               commonMistakes: { type: Type.ARRAY, items: { type: Type.STRING } },
               visualElements: { type: Type.ARRAY, items: { type: Type.STRING } },
               tikzSuitability: { type: Type.STRING },
-            }
+            },
           },
           problems: {
             type: Type.ARRAY,
@@ -454,10 +554,48 @@ YÊU CẦU: Hãy tạo ĐÚNG 10 bài toán thực tế tương tự (id từ 1 
                   type: Type.OBJECT,
                   properties: {
                     dataConsistent: { type: Type.BOOLEAN },
-     const { text: jsonStr, modelUsed } = await generateContentWithFallback(ai, model, userPrompt, schemaConfig);
+                    unitsConsistent: { type: Type.BOOLEAN },
+                    answerVerified: { type: Type.BOOLEAN },
+                    imageConsistent: { type: Type.BOOLEAN },
+                    latexValid: { type: Type.BOOLEAN },
+                    tikzValid: { type: Type.BOOLEAN },
+                  },
+                },
+              },
+              required: [
+                "id",
+                "title",
+                "context",
+                "difficulty",
+                "questionType",
+                "problemText",
+                "latexProblemText",
+                "givenData",
+                "requiredResult",
+                "units",
+                "finalAnswer",
+                "imageNeeded",
+                "imageTitle",
+                "imagePrompt",
+                "negativePrompt",
+                "imageAspectRatio",
+                "tikzNeeded",
+                "tikzCode",
+                "solutionSummary",
+                "solutionSteps",
+                "verificationMethod",
+                "commonMistakes",
+              ],
+            },
+          },
+        },
+        required: ["problems"],
+      },
+    };
+
+    const { text: jsonStr, modelUsed } = await generateContentWithFallback(apiKey, model, userPrompt, schemaConfig);
     let data = cleanAndParseJson(jsonStr);
 
-    // Verify exactly 10 problems returned
     if (!data.problems || !Array.isArray(data.problems)) {
       throw new Error("Dữ liệu phản hồi không đúng cấu trúc danh sách bài toán.");
     }
@@ -474,10 +612,11 @@ YÊU CẦU: Hãy tạo ĐÚNG 10 bài toán thực tế tương tự (id từ 1 
       }
     }
 
-    // Sanitize problem IDs 1..10
+    // Sanitize problem IDs 1..10 and attach modelUsed
     data.problems = data.problems.slice(0, 10).map((p: any, idx: number) => ({
       ...p,
       id: idx + 1,
+      modelUsed: p.modelUsed || modelUsed,
       imageNeeded: p.imageNeeded ?? true,
       tikzNeeded: p.tikzNeeded ?? true,
       validation: p.validation || {
@@ -486,9 +625,13 @@ YÊU CẦU: Hãy tạo ĐÚNG 10 bài toán thực tế tương tự (id từ 1 
         answerVerified: true,
         imageConsistent: true,
         latexValid: true,
-        tikzValid: true
-      }
+        tikzValid: true,
+      },
     }));
+
+    if (data.sourceAnalysis) {
+      data.sourceAnalysis.modelUsed = modelUsed;
+    }
 
     return res.json({ success: true, data, modelUsed });
   } catch (err: any) {
@@ -496,7 +639,7 @@ YÊU CẦU: Hãy tạo ĐÚNG 10 bài toán thực tế tương tự (id từ 1 
   }
 });
 
-// 4. API: Regenerate a Single Unlocked Question
+// 5. API: Regenerate a Single Unlocked Question
 app.post("/api/gemini/regenerate-one", async (req, res) => {
   const { idToRegenerate, problemText, options, analysis, apiKey, model = "gemini-3.6-flash" } = req.body;
 
@@ -505,7 +648,6 @@ app.post("/api/gemini/regenerate-one", async (req, res) => {
   }
 
   try {
-    const ai = getGenAIClient(apiKey);
     const userPrompt = `Hãy tạo ĐÚNG 01 bài toán thực tế tương tự mới để thay thế cho Câu ${idToRegenerate}.
 
 ĐỀ BÀI GỐC:
@@ -562,29 +704,47 @@ Trả về duy nhất 01 đối tượng bài toán có id là ${idToRegenerate}
               latexValid: { type: Type.BOOLEAN },
               tikzValid: { type: Type.BOOLEAN },
             },
-            required: ["dataConsistent", "unitsConsistent", "answerVerified", "imageConsistent", "latexValid", "tikzValid"]
-          }
+            required: ["dataConsistent", "unitsConsistent", "answerVerified", "imageConsistent", "latexValid", "tikzValid"],
+          },
         },
         required: [
-          "id", "title", "context", "difficulty", "questionType", "problemText",
-          "latexProblemText", "givenData", "requiredResult", "units", "finalAnswer",
-          "imageNeeded", "imageTitle", "imagePrompt", "negativePrompt", "imageAspectRatio",
-          "tikzNeeded", "tikzCode", "solutionSummary", "solutionSteps", "solutionLatex",
-          "verificationMethod", "commonMistakes", "validation"
-        ]
-      }
+          "id",
+          "title",
+          "context",
+          "difficulty",
+          "questionType",
+          "problemText",
+          "latexProblemText",
+          "givenData",
+          "requiredResult",
+          "units",
+          "finalAnswer",
+          "imageNeeded",
+          "imageTitle",
+          "imagePrompt",
+          "negativePrompt",
+          "imageAspectRatio",
+          "tikzNeeded",
+          "tikzCode",
+          "solutionSummary",
+          "solutionSteps",
+          "verificationMethod",
+          "commonMistakes",
+        ],
+      },
     };
 
-    const { text: jsonStr, modelUsed } = await generateContentWithFallback(ai, model, userPrompt, schemaConfig);
+    const { text: jsonStr, modelUsed } = await generateContentWithFallback(apiKey, model, userPrompt, schemaConfig);
     const singleProblem = cleanAndParseJson(jsonStr || "{}");
     singleProblem.id = idToRegenerate;
+    singleProblem.modelUsed = modelUsed;
     return res.json({ success: true, problem: singleProblem, modelUsed });
   } catch (err: any) {
     return res.status(500).json({ error: sanitizeError(err, apiKey) });
   }
 });
 
-// 5. API: Generate Image using Gemini Image Model with auto-fallback
+// 6. API: Generate Image using Gemini Image Model with auto-fallback
 app.post("/api/gemini/generate-image", async (req, res) => {
   const { imagePrompt, negativePrompt, aspectRatio = "16:9", apiKey, imageModel = "imagen-3.0-generate-002" } = req.body;
 
@@ -592,10 +752,13 @@ app.post("/api/gemini/generate-image", async (req, res) => {
     return res.status(400).json({ error: "Thiếu câu lệnh tạo ảnh." });
   }
 
-  try {
-    const ai = getGenAIClient(apiKey);
-    const fullPrompt = `${imagePrompt}. Educational illustration for math problem. Clear geometry, clean background, sharp details. ${negativePrompt ? "Negative prompt: " + negativePrompt : ""}`;
+  const keys = parseApiKeys(apiKey);
+  if (keys.length === 0) {
+    return res.status(400).json({ error: "Chưa nhập Gemini API Key." });
+  }
 
+  try {
+    const fullPrompt = `${imagePrompt}. Educational illustration for math problem. Clear geometry, clean background, sharp details. ${negativePrompt ? "Negative prompt: " + negativePrompt : ""}`;
     const validAspectRatios = ["1:1", "3:4", "4:3", "9:16", "16:9"];
     const ar = validAspectRatios.includes(aspectRatio) ? aspectRatio : "16:9";
 
@@ -604,22 +767,26 @@ app.post("/api/gemini/generate-image", async (req, res) => {
     let modelUsedForSvg = "";
 
     // Attempt 1: Imagen 3 model (imagen-3.0-generate-002)
-    try {
-      const imgRes = await ai.models.generateImages({
-        model: "imagen-3.0-generate-002",
-        prompt: fullPrompt,
-        config: {
-          numberOfImages: 1,
-          outputMimeType: "image/png",
-          aspectRatio: ar as any,
+    for (const currentKey of keys) {
+      try {
+        const ai = getGenAIClient(currentKey);
+        const imgRes = await ai.models.generateImages({
+          model: "imagen-3.0-generate-002",
+          prompt: fullPrompt,
+          config: {
+            numberOfImages: 1,
+            outputMimeType: "image/png",
+            aspectRatio: ar as any,
+          },
+        });
+        if (imgRes.generatedImages?.[0]?.image?.imageBytes) {
+          const base64 = imgRes.generatedImages[0].image.imageBytes;
+          imageDataUrl = `data:image/png;base64,${base64}`;
+          break;
         }
-      });
-      if (imgRes.generatedImages?.[0]?.image?.imageBytes) {
-        const base64 = imgRes.generatedImages[0].image.imageBytes;
-        imageDataUrl = `data:image/png;base64,${base64}`;
+      } catch (e1) {
+        // Continue to next key or fallback
       }
-    } catch (e1) {
-      // Imagen 3 failed or not supported by key tier, continue to fallback
     }
 
     // Attempt 2: Intelligent SVG Vector Graphic cascade fallback (Works on ALL API keys!)
@@ -633,28 +800,19 @@ YÊU CẦU BẮT BUỘC:
 4. Có khung tiêu đề nhỏ ở góc trên.
 5. KHÔNG chứa bất kỳ văn bản giải thích hay Markdown nào ngoài mã <svg ...></svg>.`;
 
-      const candidateModels = getModelCascadeList();
-      for (const modelName of candidateModels) {
-        try {
-          const svgRes = await ai.models.generateContent({
-            model: modelName,
-            contents: svgPrompt,
-          });
-
-          let svgText = svgRes.text || "";
-          if (svgText.includes("<svg") && svgText.includes("</svg>")) {
-            const start = svgText.indexOf("<svg");
-            const end = svgText.lastIndexOf("</svg>") + 6;
-            svgText = svgText.substring(start, end);
-            const base64Svg = Buffer.from(svgText, "utf-8").toString("base64");
-            imageDataUrl = `data:image/svg+xml;base64,${base64Svg}`;
-            isSvgFallback = true;
-            modelUsedForSvg = modelName;
-            break;
-          }
-        } catch (e2) {
-          console.warn(`[SVG Cascade] Model ${modelName} failed for SVG generation, trying next model...`);
+      try {
+        const { text: svgText, modelUsed } = await generateContentWithFallback(apiKey, "gemini-3.6-flash", svgPrompt);
+        if (svgText.includes("<svg") && svgText.includes("</svg>")) {
+          const start = svgText.indexOf("<svg");
+          const end = svgText.lastIndexOf("</svg>") + 6;
+          const cleanSvg = svgText.substring(start, end);
+          const base64Svg = Buffer.from(cleanSvg, "utf-8").toString("base64");
+          imageDataUrl = `data:image/svg+xml;base64,${base64Svg}`;
+          isSvgFallback = true;
+          modelUsedForSvg = modelUsed;
         }
+      } catch (e2) {
+        console.warn(`[SVG Cascade] Fallback SVG generation encountered error.`);
       }
     }
 
@@ -663,12 +821,12 @@ YÊU CẦU BẮT BUỘC:
         success: true,
         imageDataUrl,
         isSvgFallback,
-        note: isSvgFallback ? `Đã tự động tạo sơ đồ vector SVG minh họa (Dự phòng thông minh qua ${modelUsedForSvg})` : undefined
+        note: isSvgFallback ? `Đã tự động tạo sơ đồ vector SVG minh họa (Dự phòng thông minh qua ${modelUsedForSvg})` : undefined,
       });
     } else {
       return res.json({
         success: false,
-        fallbackText: "API key hoặc model hiện tại chưa hỗ trợ tạo ảnh trực tiếp. Bạn vẫn có thể sao chép câu lệnh bên dưới để tạo ảnh trong ChatGPT, Gemini hoặc công cụ tạo ảnh khác."
+        fallbackText: "API key hoặc model hiện tại chưa hỗ trợ tạo ảnh trực tiếp. Bạn vẫn có thể sao chép câu lệnh bên dưới để tạo ảnh trong ChatGPT, Gemini hoặc Canva.",
       });
     }
   } catch (err: any) {
@@ -676,14 +834,45 @@ YÊU CẦU BẮT BUỘC:
     return res.json({
       success: false,
       error: cleanErr,
-      fallbackText: "API key hoặc model hiện tại chưa hỗ trợ tạo ảnh trực tiếp. Bạn vẫn có thể sao chép câu lệnh bên dưới để tạo ảnh trong ChatGPT, Gemini hoặc công cụ tạo ảnh khác."
+      fallbackText: "API key hoặc model hiện tại chưa hỗ trợ tạo ảnh trực tiếp. Bạn vẫn có thể sao chép câu lệnh bên dưới để tạo ảnh trong ChatGPT, Gemini hoặc Canva.",
     });
   }
 });
 
-// 6. API: Parse Uploaded Document File (Docx text extraction / Raw text)
+// 7. API: Render TikZ to SVG Preview using AI
+app.post("/api/gemini/render-tikz", async (req, res) => {
+  const { tikzCode, apiKey, model = "gemini-3.6-flash" } = req.body;
+  if (!tikzCode || !tikzCode.trim()) {
+    return res.status(400).json({ error: "Thiếu mã TikZ." });
+  }
+
+  const prompt = `Bạn là trình biên dịch TikZ sang SVG chính xác. Hãy chuyển đổi đoạn mã TikZ sau thành mã SVG hiển thị trực quan:
+MÃ TIKZ:
+${tikzCode}
+
+YÊU CẦU:
+1. Trả về mã SVG hoàn chỉnh bắt đầu bằng <svg viewBox="0 0 600 400" xmlns="http://www.w3.org/2000/svg"> và kết thúc bằng </svg>.
+2. Vẽ đúng các điểm, đường thẳng, góc vuông, nhãn văn bản, cung tròn, trục tọa độ tương ứng với mã TikZ.
+3. Không trả về giải thích, chỉ trả về duy nhất mã SVG.`;
+
+  try {
+    const { text: svgText } = await generateContentWithFallback(apiKey, model, prompt);
+    if (svgText.includes("<svg") && svgText.includes("</svg>")) {
+      const start = svgText.indexOf("<svg");
+      const end = svgText.lastIndexOf("</svg>") + 6;
+      const cleanSvg = svgText.substring(start, end);
+      const base64Svg = Buffer.from(cleanSvg, "utf-8").toString("base64");
+      return res.json({ success: true, svgDataUrl: `data:image/svg+xml;base64,${base64Svg}` });
+    }
+    return res.status(500).json({ error: "Không tạo được mã SVG từ TikZ." });
+  } catch (err: any) {
+    return res.status(500).json({ error: sanitizeError(err, apiKey) });
+  }
+});
+
+// 8. API: Parse Uploaded Document File (Docx text extraction / Raw text)
 app.post("/api/parse-file", async (req, res) => {
-  const { fileData, fileName } = req.body; // fileData is base64
+  const { fileData, fileName } = req.body;
   if (!fileData) {
     return res.status(400).json({ error: "Thiếu dữ liệu file." });
   }

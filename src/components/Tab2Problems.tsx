@@ -13,7 +13,8 @@ import {
   BookOpen,
   Download,
   Share2,
-  Sparkles
+  Sparkles,
+  Cpu
 } from 'lucide-react';
 import { ProblemItem } from '../types';
 import { MathText } from '../utils/latex';
@@ -115,7 +116,7 @@ export const Tab2Problems: React.FC<Tab2ProblemsProps> = ({
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={onToggleShowAnswers}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-sans font-semibold rounded border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-sans font-semibold rounded border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
             {showAnswers ? <EyeOff className="w-3.5 h-3.5 text-blue-700 dark:text-blue-400" /> : <Eye className="w-3.5 h-3.5 text-blue-700 dark:text-blue-400" />}
             {showAnswers ? "Ẩn đáp án" : "Hiện đáp án"}
@@ -123,7 +124,7 @@ export const Tab2Problems: React.FC<Tab2ProblemsProps> = ({
 
           <button
             onClick={handleCopyAllProblems}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-sans font-semibold rounded border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-sans font-semibold rounded border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <Copy className="w-3.5 h-3.5" />
             Sao chép 10 đề
@@ -131,7 +132,7 @@ export const Tab2Problems: React.FC<Tab2ProblemsProps> = ({
 
           <button
             onClick={handleCopyAllLatex}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-sans font-semibold rounded bg-blue-50 dark:bg-blue-950/80 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-sans font-semibold rounded bg-blue-50 dark:bg-blue-950/80 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 transition-colors cursor-pointer"
           >
             <Code className="w-3.5 h-3.5" />
             Sao chép LaTeX
@@ -140,7 +141,7 @@ export const Tab2Problems: React.FC<Tab2ProblemsProps> = ({
           <button
             onClick={onRegenerateUnlocked}
             disabled={isGenerating}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-sans font-semibold rounded border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-sans font-semibold rounded border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isGenerating ? 'animate-spin' : ''}`} />
             Tạo lại câu chưa khóa
@@ -148,7 +149,7 @@ export const Tab2Problems: React.FC<Tab2ProblemsProps> = ({
 
           <button
             onClick={() => onNavigateToTab('export')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-sans font-bold uppercase tracking-wider rounded bg-blue-700 text-white hover:bg-blue-800 border border-blue-800 transition-colors shadow-2xs"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-sans font-bold uppercase tracking-wider rounded bg-blue-700 text-white hover:bg-blue-800 border border-blue-800 transition-colors shadow-2xs cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
             XUẤT WORD CHUẨN
@@ -178,9 +179,18 @@ export const Tab2Problems: React.FC<Tab2ProblemsProps> = ({
                     C{p.id < 10 ? `0${p.id}` : p.id}
                   </span>
                   <div>
-                    <h3 className="text-base sm:text-lg font-sans font-bold text-slate-900 dark:text-slate-100">
-                      {p.title || `Bài toán thực tế số ${p.id}`}
-                    </h3>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-base sm:text-lg font-sans font-bold text-slate-900 dark:text-slate-100">
+                        {p.title || `Bài toán thực tế số ${p.id}`}
+                      </h3>
+
+                      {/* AI Model Badge */}
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                        <Cpu className="w-3 h-3 text-blue-600" />
+                        {p.modelUsed || 'gemini-3.6-flash'}
+                      </span>
+                    </div>
+
                     <div className="flex flex-wrap items-center gap-2 mt-0.5 text-xs font-sans">
                       <span className="font-semibold text-slate-600 dark:text-slate-400">Mức độ: {p.difficulty}</span>
                       <span className="text-slate-300 dark:text-slate-600">•</span>
@@ -197,13 +207,13 @@ export const Tab2Problems: React.FC<Tab2ProblemsProps> = ({
                 <button
                   onClick={() => onToggleLock(p.id)}
                   title={p.isLocked ? "Mở khóa câu này" : "Khóa câu này lại (không bị đổi khi tạo lại toàn bộ)"}
-                  className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-sans font-bold uppercase tracking-[0.1em] border transition-colors ${
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-sans font-bold uppercase tracking-wider rounded border transition-colors cursor-pointer ${
                     p.isLocked
-                      ? 'bg-red-800/10 text-red-800 dark:bg-red-950 dark:text-red-300 border-red-800/40'
-                      : 'bg-[#1A1A1A]/5 text-[#1A1A1A] dark:bg-stone-800 dark:text-stone-300 border-[#1A1A1A]/15 hover:bg-[#1A1A1A]/10'
+                      ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300 border-amber-400'
+                      : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-200'
                   }`}
                 >
-                  {p.isLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                  {p.isLocked ? <Lock className="w-3.5 h-3.5 text-amber-700" /> : <Unlock className="w-3.5 h-3.5" />}
                   {p.isLocked ? "Đã khóa câu" : "Mở khóa câu"}
                 </button>
               </div>
@@ -216,18 +226,18 @@ export const Tab2Problems: React.FC<Tab2ProblemsProps> = ({
                       value={editProblemText}
                       onChange={(e) => setEditProblemText(e.target.value)}
                       rows={4}
-                      className="w-full p-3 border border-red-800 bg-[#F7F5F2] dark:bg-[#141413] text-sm focus:outline-hidden font-sans"
+                      className="w-full p-3 rounded border border-blue-600 bg-slate-50 dark:bg-slate-900 text-sm focus:outline-hidden font-sans"
                     />
                     <div className="flex justify-end gap-2">
                       <button
                         onClick={() => setEditingId(null)}
-                        className="px-3 py-1.5 text-xs font-sans font-bold uppercase text-[#1A1A1A] hover:bg-[#1A1A1A]/10"
+                        className="px-3 py-1.5 text-xs font-sans font-bold uppercase text-slate-700 dark:text-slate-300 hover:bg-slate-100 cursor-pointer"
                       >
                         Hủy
                       </button>
                       <button
                         onClick={() => handleSaveEdit(p)}
-                        className="px-3 py-1.5 text-xs font-sans font-bold uppercase bg-red-800 text-white hover:bg-red-900 border border-red-900"
+                        className="px-3 py-1.5 text-xs font-sans font-bold uppercase rounded bg-blue-700 text-white hover:bg-blue-800 border border-blue-800 cursor-pointer"
                       >
                         <Check className="w-3.5 h-3.5 inline mr-1" />
                         Lưu chỉnh sửa
@@ -235,7 +245,7 @@ export const Tab2Problems: React.FC<Tab2ProblemsProps> = ({
                     </div>
                   </div>
                 ) : (
-                  <div className="text-sm sm:text-base leading-relaxed text-[#1A1A1A] dark:text-[#EAE8E3]">
+                  <div className="text-sm sm:text-base leading-relaxed text-slate-900 dark:text-slate-100 font-sans">
                     <MathText content={p.problemText} />
                   </div>
                 )}
@@ -250,13 +260,13 @@ export const Tab2Problems: React.FC<Tab2ProblemsProps> = ({
                       return (
                         <div
                           key={oIdx}
-                          className={`p-3 border text-xs sm:text-sm font-medium transition-colors ${
+                          className={`p-3 rounded border text-xs sm:text-sm font-medium transition-colors ${
                             isCorrect
-                              ? 'bg-emerald-900/10 dark:bg-emerald-950/60 border-emerald-800 text-emerald-900 dark:text-emerald-200 font-bold'
-                              : 'bg-[#F7F5F2]/60 dark:bg-[#141413]/60 border-[#1A1A1A]/15 dark:border-stone-800 text-[#1A1A1A] dark:text-[#EAE8E3]'
+                              ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-600 text-emerald-900 dark:text-emerald-200 font-bold'
+                              : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100'
                           }`}
                         >
-                          <span className="font-bold mr-1.5 text-red-800 dark:text-red-400 font-sans">{label}.</span>
+                          <span className="font-bold mr-1.5 text-blue-700 dark:text-blue-400 font-sans">{label}.</span>
                           <MathText content={opt} />
                         </div>
                       );
@@ -266,7 +276,7 @@ export const Tab2Problems: React.FC<Tab2ProblemsProps> = ({
 
                 {/* Show Answer Display */}
                 {showAnswers && (
-                  <div className="p-3 bg-red-900/5 dark:bg-red-950/50 border border-red-800/30 text-xs font-sans font-bold uppercase tracking-wider text-red-900 dark:text-red-200">
+                  <div className="p-3 rounded bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 text-xs font-sans font-bold uppercase tracking-wider text-blue-900 dark:text-blue-200">
                     <span>ĐÁP SỐ: </span>
                     <span>{p.finalAnswer || p.correctOption}</span>
                   </div>
@@ -274,19 +284,19 @@ export const Tab2Problems: React.FC<Tab2ProblemsProps> = ({
 
                 {/* Raw LaTeX View */}
                 {showRawLatex && (
-                  <div className="p-3 bg-[#1A1A1A] text-[#F7F5F2] font-mono text-xs overflow-x-auto space-y-1">
-                    <div className="text-red-400 font-bold text-[10px] uppercase tracking-widest">Mã LaTeX câu {p.id}:</div>
+                  <div className="p-3 rounded bg-slate-900 text-slate-100 font-mono text-xs overflow-x-auto space-y-1">
+                    <div className="text-blue-400 font-bold text-[10px] uppercase tracking-widest">Mã LaTeX câu {p.id}:</div>
                     <code>{p.latexProblemText || p.problemText}</code>
                   </div>
                 )}
               </div>
 
               {/* Per-Card Action Toolbar */}
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-4 mt-4 border-t border-[#1A1A1A]/10 dark:border-stone-800">
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-4 mt-4 border-t border-slate-200 dark:border-slate-800">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <button
                     onClick={() => copyToClipboard(p.problemText, `Đã sao chép Câu ${p.id}`)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-sans font-bold uppercase tracking-wider border border-[#1A1A1A]/20 dark:border-stone-700 text-[#1A1A1A] dark:text-[#EAE8E3] hover:bg-[#1A1A1A]/5"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-sans font-semibold rounded border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                   >
                     <Copy className="w-3.5 h-3.5" />
                     Sao chép đề
@@ -294,7 +304,7 @@ export const Tab2Problems: React.FC<Tab2ProblemsProps> = ({
 
                   <button
                     onClick={() => copyToClipboard(p.latexProblemText || p.problemText, `Đã sao chép LaTeX Câu ${p.id}`)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-sans font-bold uppercase tracking-wider border border-[#1A1A1A]/20 dark:border-stone-700 text-[#1A1A1A] dark:text-[#EAE8E3] hover:bg-[#1A1A1A]/5"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-sans font-semibold rounded border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                   >
                     <Code className="w-3.5 h-3.5" />
                     Sao chép LaTeX
@@ -302,14 +312,14 @@ export const Tab2Problems: React.FC<Tab2ProblemsProps> = ({
 
                   <button
                     onClick={() => setShowRawLatexId(showRawLatex ? null : p.id)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-sans font-bold uppercase tracking-wider border border-[#1A1A1A]/20 dark:border-stone-700 text-[#1A1A1A] dark:text-[#EAE8E3] hover:bg-[#1A1A1A]/5"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-sans font-semibold rounded border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                   >
                     {showRawLatex ? "Ẩn LaTeX" : "Xem mã LaTeX"}
                   </button>
 
                   <button
                     onClick={() => handleStartEdit(p)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-sans font-bold uppercase tracking-wider border border-[#1A1A1A]/20 dark:border-stone-700 text-[#1A1A1A] dark:text-[#EAE8E3] hover:bg-[#1A1A1A]/5"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-sans font-semibold rounded border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                   >
                     <Edit2 className="w-3.5 h-3.5" />
                     Chỉnh sửa
@@ -318,7 +328,7 @@ export const Tab2Problems: React.FC<Tab2ProblemsProps> = ({
                   <button
                     onClick={() => onRegenerateOne(p.id)}
                     disabled={isGenerating || p.isLocked}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-sans font-bold uppercase tracking-wider bg-red-800/10 text-red-800 dark:text-red-300 border border-red-800/30 hover:bg-red-800 hover:text-white disabled:opacity-50 transition-colors"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-sans font-semibold rounded bg-blue-50 text-blue-800 dark:bg-blue-950/80 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 disabled:opacity-50 transition-colors cursor-pointer"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
                     Tạo lại câu này
@@ -329,14 +339,14 @@ export const Tab2Problems: React.FC<Tab2ProblemsProps> = ({
                 <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => onNavigateToTab('solutions')}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-sans font-bold uppercase tracking-wider text-red-800 dark:text-red-400 hover:underline"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-sans font-bold uppercase tracking-wider text-blue-700 dark:text-blue-400 hover:underline cursor-pointer"
                   >
                     <BookOpen className="w-3.5 h-3.5" />
                     Xem lời giải
                   </button>
                   <button
                     onClick={() => onNavigateToTab('images')}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-sans font-bold uppercase tracking-wider text-red-800 dark:text-red-400 hover:underline"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-sans font-bold uppercase tracking-wider text-blue-700 dark:text-blue-400 hover:underline cursor-pointer"
                   >
                     <Image className="w-3.5 h-3.5" />
                     Hình & TikZ
@@ -349,19 +359,19 @@ export const Tab2Problems: React.FC<Tab2ProblemsProps> = ({
       </div>
 
       {/* Bottom Action Bar */}
-      <div className="bg-white dark:bg-[#1E1D1B] p-5 shadow-xs border border-[#1A1A1A]/15 dark:border-stone-800 flex flex-wrap items-center justify-between gap-3">
+      <div className="bg-white dark:bg-[#0F172A] p-5 rounded-lg shadow-sm border border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <button
             onClick={onRegenerateUnlocked}
             disabled={isGenerating}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-sans font-bold uppercase tracking-[0.12em] bg-red-800 text-white hover:bg-red-900 border border-red-900 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-sans font-bold uppercase tracking-wider rounded bg-blue-700 text-white hover:bg-blue-800 border border-blue-800 disabled:opacity-50 cursor-pointer"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             Tạo lại các câu chưa khóa
           </button>
           <button
             onClick={onExportJson}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-sans font-bold uppercase tracking-[0.12em] border border-[#1A1A1A]/20 dark:border-stone-700 text-[#1A1A1A] dark:text-[#EAE8E3] hover:bg-[#1A1A1A]/5"
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-sans font-semibold uppercase tracking-wider rounded border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
           >
             <Share2 className="w-3.5 h-3.5" />
             Xuất JSON
@@ -371,21 +381,21 @@ export const Tab2Problems: React.FC<Tab2ProblemsProps> = ({
         <div className="flex items-center gap-2">
           <button
             onClick={() => onNavigateToTab('images')}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-sans font-bold uppercase tracking-[0.12em] border border-[#1A1A1A]/20 dark:border-stone-700 text-[#1A1A1A] dark:text-[#EAE8E3] hover:bg-[#1A1A1A]/5"
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-sans font-semibold uppercase tracking-wider rounded border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
           >
             <Image className="w-3.5 h-3.5" />
             Chuyển đến Hình ảnh
           </button>
           <button
             onClick={() => onNavigateToTab('solutions')}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-sans font-bold uppercase tracking-[0.12em] border border-[#1A1A1A]/20 dark:border-stone-700 text-[#1A1A1A] dark:text-[#EAE8E3] hover:bg-[#1A1A1A]/5"
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-sans font-semibold uppercase tracking-wider rounded border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
           >
             <BookOpen className="w-3.5 h-3.5" />
             Chuyển đến Lời giải
           </button>
           <button
             onClick={() => onNavigateToTab('export')}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-sans font-bold uppercase tracking-[0.12em] bg-[#1A1A1A] dark:bg-[#EAE8E3] text-white dark:text-[#141413] hover:bg-black"
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-sans font-bold uppercase tracking-wider rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:bg-slate-800 cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
             Xuất file Word
