@@ -33,6 +33,7 @@ import {
 } from '../constants';
 import { MathText } from '../utils/latex';
 import { extractTextFromFile, formatFileSize } from '../utils/fileExtractor';
+import { apiOcrMath } from '../services/geminiClient';
 
 interface Tab1InputProps {
   sourceProblemText: string;
@@ -120,18 +121,8 @@ export const Tab1Input: React.FC<Tab1InputProps> = ({
       reader.readAsDataURL(file);
       const base64Data = await base64Promise;
 
-      const res = await fetch('/api/gemini/ocr-math', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageBase64: base64Data,
-          mimeType: file.type,
-          apiKey,
-          model: selectedModel,
-        }),
-      });
+      const result = await apiOcrMath(base64Data, file.type, apiKey, selectedModel);
 
-      const result = await res.json();
       if (result.success && result.extractedText) {
         onChangeSourceText(result.extractedText);
         setFileMeta({

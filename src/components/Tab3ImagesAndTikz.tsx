@@ -27,6 +27,7 @@ import {
   downloadImageAsSvg,
   getSafeImageSrc,
 } from '../utils/imageUtils';
+import { apiGenerateImage, apiRenderTikz } from '../services/geminiClient';
 
 interface Tab3ImagesAndTikzProps {
   problems: ProblemItem[];
@@ -59,24 +60,19 @@ export const Tab3ImagesAndTikz: React.FC<Tab3ImagesAndTikzProps> = ({
     setTimeout(() => setCopiedLabel(null), 2000);
   };
 
-  // Generate single image via API
+  // Generate single image via API (Dual-Layer: Backend or Direct Client)
   const handleGenerateSingleImage = async (p: ProblemItem) => {
     onUpdateProblem({ ...p, isGeneratingImage: true, imageError: undefined });
 
     try {
-      const res = await fetch('/api/gemini/generate-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imagePrompt: p.imagePrompt,
-          negativePrompt: p.negativePrompt || DEFAULT_NEGATIVE_PROMPT,
-          aspectRatio: p.imageAspectRatio || '16:9',
-          apiKey,
-          imageModel: selectedImageModel,
-        }),
-      });
+      const data = await apiGenerateImage(
+        p.imagePrompt,
+        p.negativePrompt || DEFAULT_NEGATIVE_PROMPT,
+        p.imageAspectRatio || '16:9',
+        apiKey,
+        selectedImageModel
+      );
 
-      const data = await res.json();
       if (data.success && data.imageDataUrl) {
         onUpdateProblem({
           ...p,
@@ -185,7 +181,7 @@ export const Tab3ImagesAndTikz: React.FC<Tab3ImagesAndTikzProps> = ({
     saveAs(content, '10_Ma_TikZ_Overleaf.zip');
   };
 
-  // Live TikZ Render Preview
+  // Live TikZ Render Preview (Dual-Layer: Backend or Direct Client)
   const handleRenderTikzPreview = async (p: ProblemItem) => {
     if (!p.tikzCode) return;
 
@@ -195,16 +191,8 @@ export const Tab3ImagesAndTikz: React.FC<Tab3ImagesAndTikzProps> = ({
     }));
 
     try {
-      const res = await fetch('/api/gemini/render-tikz', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tikzCode: p.tikzCode,
-          apiKey,
-        }),
-      });
+      const data = await apiRenderTikz(p.tikzCode, apiKey);
 
-      const data = await res.json();
       if (data.success && data.svgDataUrl) {
         setTikzPreviews((prev) => ({
           ...prev,

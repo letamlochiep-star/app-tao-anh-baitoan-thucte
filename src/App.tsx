@@ -24,6 +24,12 @@ import {
   AVAILABLE_MODELS,
   AVAILABLE_IMAGE_MODELS
 } from './constants';
+import {
+  apiTestKey,
+  apiAnalyzeProblem,
+  apiGenerate10,
+  apiRegenerateOne
+} from './services/geminiClient';
 
 export function App() {
   // 1. Core State
@@ -74,7 +80,7 @@ export function App() {
     }
   }, []);
 
-  // 5. Test Connection Logic
+  // 5. Test Connection Logic (Supports Dual-layer: Server + Direct Client)
   const handleTestConnection = async (keyToTest: string) => {
     const cleanKey = keyToTest?.trim();
     if (!cleanKey) {
@@ -87,34 +93,19 @@ export function App() {
     setApiMessage('Đang kiểm tra kết nối với Gemini API...');
 
     try {
-      const res = await fetch('/api/gemini/test-key', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKey: cleanKey }),
-      });
-
-      if (!res.ok) {
-        const errText = await res.text();
-        let errJson: any = {};
-        try { errJson = JSON.parse(errText); } catch {}
-        setApiStatus('error');
-        setApiMessage(errJson.message || `Lỗi phản hồi từ máy chủ (HTTP ${res.status}).`);
-        return;
-      }
-
-      const data = await res.json();
+      const data = await apiTestKey(cleanKey);
 
       if (data.success) {
         setApiStatus('connected');
         setApiMessage(data.message || 'Kết nối Gemini API thành công.');
       } else {
-        const isQuota = data.message?.includes('hạn mức') || data.message?.includes('giới hạn');
+        const isQuota = data.message?.includes('hạn mức') || data.message?.includes('giới hạn') || data.message?.includes('429');
         setApiStatus(isQuota ? 'quota_exceeded' : 'error');
         setApiMessage(data.message || 'Không thể kết nối Gemini API. Vui lòng kiểm tra lại khóa.');
       }
     } catch (err: any) {
       setApiStatus('error');
-      setApiMessage('Lỗi kết nối tới server. Vui lòng kiểm tra server đang chạy tại http://localhost:3000');
+      setApiMessage(err?.message || 'Lỗi kết nối tới Gemini API.');
     }
   };
 
@@ -203,18 +194,8 @@ export function App() {
     setProgressPercent(20);
 
     try {
-      const res = await fetch('/api/gemini/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          problemText: sourceProblemText,
-          options,
-          apiKey,
-          model: selectedModel,
-        }),
-      });
+      const data = await apiAnalyzeProblem(sourceProblemText, options, apiKey, selectedModel);
 
-      const data = await res.json();
       if (data.success && data.analysis) {
         setAnalysis(data.analysis);
         setProgressPercent(100);
@@ -272,21 +253,16 @@ export function App() {
       // Find existing locked problems to preserve
       const lockedProblems = problems.filter((p) => p.isLocked);
 
-      const res = await fetch('/api/gemini/generate-10', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: safeJsonStringify({
-          problemText: sourceProblemText,
-          options,
-          analysis,
-          apiKey,
-          model: selectedModel,
-          lockedProblems,
-        }),
-      });
+      const data = await apiGenerate10(
+        sourceProblemText,
+        options,
+        analysis,
+        apiKey,
+        selectedModel,
+        lockedProblems
+      );
 
       clearInterval(interval);
-      const data = await res.json();
 
       if (data.success && data.data) {
         if (data.data.sourceAnalysis) {
@@ -316,20 +292,15 @@ export function App() {
   const handleRegenerateOne = async (id: number) => {
     setIsGenerating(true);
     try {
-      const res = await fetch('/api/gemini/regenerate-one', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          idToRegenerate: id,
-          problemText: sourceProblemText,
-          options,
-          analysis,
-          apiKey,
-          model: selectedModel,
-        }),
-      });
+      const data = await apiRegenerateOne(
+        id,
+        sourceProblemText,
+        options,
+        analysis,
+        apiKey,
+        selectedModel
+      );
 
-      const data = await res.json();
       if (data.success && data.problem) {
         setProblems((prev) =>
           prev.map((p) => (p.id === id ? { ...data.problem, id, isLocked: false } : p))
