@@ -1,0 +1,6 @@
+{
+  "name": "TRỢ LÝ SÁNG TẠO BÀI TOÁN THỰC TẾ 4.0",
+  "description": "Ứng dụng hỗ trợ giáo viên tạo bài toán thực tế tương tự, hình minh họa, mã TikZ, lời giải chi tiết và tài liệu Word.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
